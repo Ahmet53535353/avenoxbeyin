@@ -834,6 +834,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trigger_claim,
             )
             return 0
+        finally:
+            # Every failure path released the claim, but the success path fell
+            # straight through without one. A compile that worked therefore left
+            # its trigger file behind, and the O_EXCL create in flush.py refused
+            # every later trigger for the rest of that day. Releasing here covers
+            # all paths; the call is idempotent, so the failure paths that
+            # already released stay correct.
+            _release_trigger_claim(trigger_claim)
 
 
 if __name__ == "__main__":

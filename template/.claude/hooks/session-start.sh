@@ -187,4 +187,15 @@ if [ "${#BEYIN_CONTEXT}" -gt 16000 ]; then
 fi
 
 [ -n "$BEYIN_CONTEXT" ] && beyin_emit SessionStart "$BEYIN_CONTEXT"
+
+# The evening compile is triggered from SessionEnd, which means a day whose last
+# session closes before 18:00 never reaches it and its log sits uncompiled. Fire
+# the catch-up pass here, detached and after the context is already emitted so it
+# can neither delay the session nor corrupt the hook's JSON on stdout. flush.py
+# decides whether anything is actually due; the call is cheap when it is not.
+if command -v python3 >/dev/null 2>&1; then
+  nohup python3 "$BEYIN_PROJECT_DIR/.claude/scripts/flush.py" \
+    --maybe-compile >/dev/null 2>&1 &
+fi
+
 exit 0
