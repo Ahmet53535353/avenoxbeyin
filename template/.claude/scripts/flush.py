@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Flush a Claude Code transcript into the vault's daily log safely."""
 
+# Windows portu: upstream "import fcntl" ile baslar ve Windows'ta modul
+# yuklenirken olur. Kilitleme _portalock uzerinden yapilir; davranis POSIX'te
+# birebir ayni kalir. Yol duzeni upstream'le aynidir.
+
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import fcntl
 import hashlib
 import json
 import os
@@ -17,6 +20,9 @@ import subprocess
 import sys
 import tempfile
 import time
+
+sys.dont_write_bytecode = True
+import _portalock
 from typing import Any, Callable, Sequence
 
 
@@ -334,6 +340,8 @@ def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
                 ],
                 input=prompt,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 cwd=temporary_path,
                 env=environment,
@@ -472,6 +480,9 @@ def maybe_trigger_compile(
 
     environment = os.environ.copy()
     environment.pop("BEYIN_INVOKED_BY", None)
+    # Ayrik surec scripts icine __pycache__ birakmasin: vault kullanicinin
+    # hafizasi, motorun cop alani degil.
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
     launcher = popen_factory or subprocess.Popen
     compile_argv = [
         sys.executable,
@@ -488,7 +499,7 @@ def maybe_trigger_compile(
             env=environment,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            **_portalock.detached_kwargs(),
         )
     except OSError:
         try:
@@ -558,8 +569,8 @@ def _flush_once(args: argparse.Namespace, event_time: dt.datetime) -> int:
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = _session_lock_path(STATE_DIR, session_id)
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+    with lock_handle, _portalock.exclusive(lock_handle):
         if _is_recent_duplicate(STATE_DIR, session_id, now_epoch):
             return 0
 

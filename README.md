@@ -36,6 +36,25 @@ claude "Read SETUP.md and follow it exactly to set up my second brain from this 
 Claude birkaç soru sorar (adın, ne iş yaptığın, AI ortağının adı), vault'u kurar, kancaları bağlar,
 masaüstüne 🧠 ikonlu bir kısayol koyar.
 
+### Yerel Windows (WSL değil)
+
+Yerel Windows için ayrı bir kurulum yolu vardır:
+
+```powershell
+git clone https://github.com/avenoxai/avenoxbeyin.git
+cd avenoxbeyin
+claude "Read SETUP-WINDOWS.md and follow it exactly to set up my second brain."
+```
+
+Gereksinimler kurulumdan önce **çalıştırılarak** denetlenir (PowerShell 7,
+Python 3, Git, Claude Code) ve biri bile eksikse **diske hiçbir şey yazılmaz**.
+
+Ne yapıldığı, hangi Windows tuzaklarının ölçüldüğü ve nelerin iddia edilmediği:
+[`docs/WINDOWS-PORT.md`](docs/WINDOWS-PORT.md).
+
+Kapsam dışı: v1 → v2 yükseltme, WSL'den taşınma, PowerShell 5.1 ile çalıştırma.
+macOS ve Linux yolları değişmedi.
+
 ### Zaten v1 beynin varsa
 
 Aynı komut yeter. `SETUP.md` önce mevcut bir beyin arar, bulursa yükseltme moduna geçer ve işi
@@ -147,7 +166,7 @@ opsiyonel değil: günlük log da gece derlemesi de onun üstünde çalışır.
 | --- | --- | --- |
 | macOS | **test edildi** | hepsi: kancalar, `daily/`, `knowledge/`, 🧠 masaüstü kısayolu |
 | Linux | **test edilmedi** | kurulum `uname` ile dallanır: Homebrew, Obsidian cask ve macOS `.app` adımları atlanır, yerine XDG `.desktop` kısayolu yazılır. Vault, kancalar ve scriptler taşınabilir yazıldı ama gerçek bir Linux masaüstünde doğrulanmadı. Denersen sorun aç. |
-| Windows | **test edilmedi**, WSL önerilir | WSL içinde Linux yolu geçerli. Yerel Windows için kurulum yolu yok. |
+| Windows | WSL, **veya** yerel Windows | WSL içinde Linux yolu geçerli. Yerel Windows için: [`SETUP-WINDOWS.md`](SETUP-WINDOWS.md) — bkz. [`docs/WINDOWS-PORT.md`](docs/WINDOWS-PORT.md). |
 
 Masaüstü kısayolu macOS'ta `osacompile` ve AppKit kullanır, ikisi de Linux'ta yoktur. Vault'un
 kendisi düz Markdown, yani her yerde açılır; kurulum akışının tamamı için doğrulanmış tek platform

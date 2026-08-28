@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Compile changed daily logs through an isolated, validated staging tree."""
 
+# Windows portu: upstream "import fcntl" ile baslar ve Windows'ta modul
+# yuklenirken olur. Kilitleme _portalock uzerinden yapilir; davranis POSIX'te
+# birebir ayni kalir. Yol duzeni upstream'le aynidir.
+
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import fcntl
 import hashlib
 import json
 import os
@@ -14,8 +17,12 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
+
+sys.dont_write_bytecode = True
+import _portalock
 from typing import Any, Sequence
 
 
@@ -553,6 +560,8 @@ def _run_claude(prompt: str, stage: Path) -> str | None:
             ],
             input=prompt,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             cwd=stage,
             env=environment,
@@ -817,39 +826,33 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     with lock_file:
         try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            _release_trigger_claim(trigger_claim)
-            return 0
+            with _portalock.exclusive(lock_file, blocking=False) as held:
+                if not held:
+                    _release_trigger_claim(trigger_claim)
+                    return 0
+                try:
+                    return _run_locked(args, trigger_claim)
+                except Exception as exc:  # Compiler preserves the hook contract.
+                    state_path = STATE_DIR / "compile-state.json"
+                    try:
+                        state = load_state(state_path)
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        state = _default_state()
+                    _record_failure(
+                        state_path,
+                        state,
+                        "",
+                        "unexpected",
+                        exc.__class__.__name__,
+                        trigger_claim,
+                    )
+                    return 0
+                finally:
+                    _release_trigger_claim(trigger_claim)
         except OSError:
             write_health(STATE_DIR, "lock-failed")
             _release_trigger_claim(trigger_claim)
             return 0
-        try:
-            return _run_locked(args, trigger_claim)
-        except Exception as exc:  # Compiler must preserve the hook exit contract.
-            state_path = STATE_DIR / "compile-state.json"
-            try:
-                state = load_state(state_path)
-            except (OSError, ValueError, json.JSONDecodeError):
-                state = _default_state()
-            _record_failure(
-                state_path,
-                state,
-                "",
-                "unexpected",
-                exc.__class__.__name__,
-                trigger_claim,
-            )
-            return 0
-        finally:
-            # Every failure path released the claim, but the success path fell
-            # straight through without one. A compile that worked therefore left
-            # its trigger file behind, and the O_EXCL create in flush.py refused
-            # every later trigger for the rest of that day. Releasing here covers
-            # all paths; the call is idempotent, so the failure paths that
-            # already released stay correct.
-            _release_trigger_claim(trigger_claim)
 
 
 if __name__ == "__main__":

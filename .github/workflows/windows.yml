@@ -1,0 +1,61 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Hizli ve belirleyici olanlar. Portun dogru oldugunu bunlar soyler ve
+  # birkac dakikada sonuc verir.
+  fast:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Bagimlilik kapisi
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/Test-Preflight.ps1
+
+      # `claude` runner'da yoktur; test onu PATH'e kurulumdan ONCE stub'lar,
+      # bu yuzden burada da kosar ve kota harcamaz.
+      - name: Temiz kurulum (uctan uca)
+        shell: pwsh
+        env:
+          BEYIN_TEST_TIMEOUT_SCALE: '6'
+        run: pwsh -NoProfile -File tests/Test-CleanInstall.ps1
+
+      - name: Kanca parse kontrolu
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem template/.claude/hooks/*.ps1, scripts/*.ps1, tests/*.ps1 | ForEach-Object {
+            $e = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e) | Out-Null
+            if ($e.Count) { Write-Host "FAIL $($_.Name): $($e[0].Message)"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+          Write-Host 'parse ok'
+
+  # Upstream'in motor suite'i ayri job'da kosar; installer veya PowerShell
+  # parse hatasi motor regresyonunun sonucunu gizlemez.
+  engine:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Motor testleri
+        shell: pwsh
+        env:
+          BEYIN_TEST_TIMEOUT_SCALE: '6'
+        run: python tests/scripts_test_windows.py

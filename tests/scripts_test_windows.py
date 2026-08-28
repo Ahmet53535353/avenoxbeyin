@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Self-contained security and reliability tests for the v2 scripts."""
+"""Windows uyarlaması: upstream avenox tests/scripts_test.py.
+
+Değişen üç şey: kaynak yolu .claude/scripts, kendi fcntl kullanımı _portalock,
+ve sys.path'e script dizini eklenir. Test gövdesi upstream ile aynıdır —
+amaç portun anlamı bozup bozmadığını upstream sözleşmesiyle ölçmek.
+"""
 
 from __future__ import annotations
 
 import datetime as dt
-import fcntl
 import hashlib
 import importlib.util
 import json
@@ -16,12 +20,45 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 import uuid
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_SCRIPTS = REPO_ROOT / "template" / ".claude" / "scripts"
+
+# Alt surec zaman asimlari makineye baglidir, koda degil. Yerel bir gelistirici
+# makinesinde compile.py bir saniyenin altinda doner; GitHub'in windows-latest
+# runner'inda 15 saniyelik sabit sinir asildi ve 25 testin cogu TimeoutExpired
+# ile patladi (olculdu: tum kosu 294 saniye surdu). Sinir bu yuzden ortamdan
+# olceklenir; CI kendi carpanini verir.
+TIMEOUT_SCALE = float(os.environ.get("BEYIN_TEST_TIMEOUT_SCALE", "1"))
+
+
+def _timeout(seconds: float) -> float:
+    return seconds * TIMEOUT_SCALE
 sys.path.insert(0, str(SOURCE_SCRIPTS))
+import _portalock
+
+
+def _symlinks_available() -> bool:
+    """Windows'ta symlink olusturmak yukseltilmis yetki ister (WinError 1314).
+
+    Symlink kurulamiyorsa saldiriyi taklit eden test hic tetiklenemez; sonucu
+    'gecti' saymak yanlis guven verir. Yetenegi olcup testi acikca atlatiyoruz.
+    """
+    with tempfile.TemporaryDirectory() as temporary:
+        base = Path(temporary)
+        target = base / "target"
+        target.write_text("x", encoding="utf-8")
+        try:
+            (base / "link").symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+    return True
+
+
+SYMLINKS_AVAILABLE = _symlinks_available()
 VALID_SUMMARY = """## Bağlam
 Kalıcı bağlam.
 ## Önemli Konuşmalar
@@ -63,6 +100,7 @@ class ScriptsTest(unittest.TestCase):
         self.bin_dir.mkdir()
         shutil.copy2(SOURCE_SCRIPTS / "flush.py", self.scripts / "flush.py")
         shutil.copy2(SOURCE_SCRIPTS / "compile.py", self.scripts / "compile.py")
+        # Gerçek dağıtım üç dosyadır: motor iki script + portable kilit modülü.
         shutil.copy2(SOURCE_SCRIPTS / "_portalock.py", self.scripts / "_portalock.py")
         (self.knowledge / "index.md").write_text(
             "# Bilgi İndeksi\n", encoding="utf-8"
@@ -76,7 +114,19 @@ class ScriptsTest(unittest.TestCase):
         self._write_claude_stub()
 
     def tearDown(self) -> None:
-        self.temporary.cleanup()
+        # Windows'ta ayrik surecler (flush.py / compile.py) dizin tutamaklarini
+        # senkron birakmaz; TemporaryDirectory.cleanup() WinError 32 firlatir.
+        # Olculdu: yerel makinede hic olmadi, GitHub windows-latest runner'inda
+        # 31 teardown hatasi verdi. Once kisa geri cekilmelerle yeniden dene,
+        # sonra pes et -- gecici dizini isletim sistemi zaten temizler ve bir
+        # temizlik hatasi testin sonucunu degistirmemeli.
+        for attempt in range(10):
+            try:
+                self.temporary.cleanup()
+                return
+            except OSError:
+                time.sleep(0.2 * (attempt + 1))
+        shutil.rmtree(self.temporary.name, ignore_errors=True)
 
     def _write_claude_stub(self) -> None:
         stub = self.bin_dir / "claude"
@@ -87,6 +137,9 @@ import os
 from pathlib import Path
 import sys
 import time
+
+sys.stdin.reconfigure(encoding="utf-8", errors="strict")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 prompt = sys.stdin.read()
 arguments = sys.argv[1:]
@@ -133,6 +186,18 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             encoding="utf-8",
         )
         stub.chmod(0o755)
+        if sys.platform == "win32":
+            shim = "\n".join(
+                [
+                    "@echo off",
+                    f'"{sys.executable}" "%~dp0claude" %*',
+                    "",
+                ]
+            )
+            (self.bin_dir / "claude.cmd").write_text(
+                shim,
+                encoding="utf-8",
+            )
 
     def _environment(self, **overrides: str) -> dict[str, str]:
         environment = os.environ.copy()
@@ -202,8 +267,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=self._environment(**environment),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
-            timeout=15,
+            timeout=_timeout(15),
             check=False,
         )
 
@@ -217,8 +284,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=self._environment(**environment),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
-            timeout=15,
+            timeout=_timeout(15),
             check=False,
         )
 
@@ -237,6 +306,8 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         snapshot = {}
         for path in self.vault.rglob("*"):
             if not path.is_file():
+                continue
+            if "__pycache__" in path.parts:
                 continue
             try:
                 path.relative_to(self.state)
@@ -361,6 +432,8 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=environment,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -369,11 +442,13 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=environment,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        first_output = first.communicate(timeout=10)
-        second_output = second.communicate(timeout=10)
+        first_output = first.communicate(timeout=_timeout(10))
+        second_output = second.communicate(timeout=_timeout(10))
         self.assertEqual(first.returncode, 0, first_output)
         self.assertEqual(second.returncode, 0, second_output)
         self.assertEqual(len(self._stub_calls("haiku")), 1)
@@ -470,15 +545,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         current = dt.datetime(2026, 8, 23, 10, 0)
         self.assertTrue(
             FLUSH.maybe_trigger_compile(
-                self.vault,
-                current,
-                fake_popen,
-                catch_up=True,
+                self.vault, current, fake_popen, catch_up=True
             )
         )
-        launch_argv = launches[0][0][0]
         self.assertEqual(
-            launch_argv[-2:],
+            launches[0][0][0][-2:],
             ["--before-date", "2026-08-23"],
         )
 
@@ -491,10 +562,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         launches.clear()
         self.assertFalse(
             FLUSH.maybe_trigger_compile(
-                self.vault,
-                current,
-                fake_popen,
-                catch_up=True,
+                self.vault, current, fake_popen, catch_up=True
             )
         )
         self.assertEqual(launches, [])
@@ -619,6 +687,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertNotIn(daily_path.name, state["ingested"])
         self.assertEqual(state["last_status"], "fail:policy")
 
+    @unittest.skipUnless(
+        SYMLINKS_AVAILABLE,
+        "symlink olusturulamiyor (Windows yetkisi); saldiri kurulamadigi icin atlandi",
+    )
     def test_staged_symlink_is_rejected_before_promotion(self) -> None:
         daily_path = self.daily / "2026-08-20.md"
         daily_path.write_text("symlink denemesi", encoding="utf-8")
@@ -669,7 +741,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         (self.daily / "2026-08-20.md").write_text("log", encoding="utf-8")
         lock_path = self.state / "compile.lock"
         with lock_path.open("a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _portalock.acquire(lock_file, blocking=False)
             result = self._run_compile("--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
@@ -786,8 +858,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=environment,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
-            timeout=10,
+            timeout=_timeout(10),
             check=False,
         )
         compile_result = subprocess.run(
@@ -795,14 +869,83 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             cwd=self.vault,
             env=environment,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
-            timeout=10,
+            timeout=_timeout(10),
             check=False,
         )
         self.assertEqual(flush_result.returncode, 0)
         self.assertEqual(compile_result.returncode, 0)
         self.assertEqual(self._stub_calls(), [])
         self.assertFalse((self.state / "health.json").exists())
+
+    def test_model_subprocess_encoding_is_locale_independent(self) -> None:
+        compile_module = load_module(
+            f"beyin_compile_encoding_{uuid.uuid4().hex}",
+            self.scripts / "compile.py",
+        )
+        prompt = "ş"
+        expected_bytes = prompt.encode("utf-8")
+
+        cases = [
+            (
+                "flush",
+                FLUSH,
+                lambda: FLUSH._run_claude(prompt, self.vault),
+            ),
+            (
+                "compile",
+                compile_module,
+                lambda: compile_module._run_claude(prompt, self.root),
+            ),
+        ]
+
+        for name, module, invoke in cases:
+            with self.subTest(name=name):
+                observed = []
+
+                def fake_run(command, **kwargs):
+                    encoding = kwargs.get("encoding") or "cp1252"
+                    errors = kwargs.get("errors") or "strict"
+                    sent = kwargs["input"].encode(encoding, errors)
+                    observed.append(
+                        {
+                            "encoding": kwargs.get("encoding"),
+                            "errors": kwargs.get("errors"),
+                            "sent": sent,
+                        }
+                    )
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout="FLUSH_BOS",
+                        stderr="",
+                    )
+
+                with (
+                    mock.patch.object(
+                        module.shutil,
+                        "which",
+                        return_value="claude",
+                    ),
+                    mock.patch.object(
+                        module.subprocess,
+                        "run",
+                        side_effect=fake_run,
+                    ),
+                ):
+                    result = invoke()
+
+                self.assertEqual(len(observed), 1)
+                self.assertEqual(observed[0]["encoding"], "utf-8")
+                self.assertEqual(observed[0]["errors"], "replace")
+                self.assertEqual(observed[0]["sent"], expected_bytes)
+
+                if name == "flush":
+                    self.assertEqual(result, ("FLUSH_BOS", None))
+                else:
+                    self.assertIsNone(result)
 
 
 if __name__ == "__main__":

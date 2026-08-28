@@ -2,3 +2,7 @@
 
 # Yerel ajan logları, repoya girmez
 tmp-brief/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
