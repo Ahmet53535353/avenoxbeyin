@@ -212,6 +212,7 @@ def _daily_sort_key(path: Path) -> tuple[dt.date, str]:
 def changed_daily_logs(
     vault_root: Path,
     ingested: dict[str, str],
+    before_date: dt.date | None = None,
 ) -> list[tuple[Path, str]]:
     daily_dir = vault_root / "daily"
     if not daily_dir.exists():
@@ -229,6 +230,8 @@ def changed_daily_logs(
         file_stat = path.lstat()
         if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
             raise PolicyError(f"unsafe-daily-source:{path.name}")
+        if before_date is not None and _daily_sort_key(path)[0] >= before_date:
+            continue
         digest = _sha256(path)
         if ingested.get(path.name) != digest:
             changed.append((path, digest))
@@ -699,6 +702,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--trigger-claim", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--before-date", type=dt.date.fromisoformat, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -718,7 +722,11 @@ def _run_locked(args: argparse.Namespace, trigger_claim: Path | None) -> int:
         )
         return 0
     try:
-        changed = changed_daily_logs(VAULT_ROOT, state["ingested"])
+        changed = changed_daily_logs(
+            VAULT_ROOT,
+            state["ingested"],
+            before_date=args.before_date,
+        )
     except (OSError, ValueError, PolicyError) as exc:
         _record_failure(
             state_path,
@@ -834,6 +842,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trigger_claim,
             )
             return 0
+        finally:
+            # Every failure path released the claim, but the success path fell
+            # straight through without one. A compile that worked therefore left
+            # its trigger file behind, and the O_EXCL create in flush.py refused
+            # every later trigger for the rest of that day. Releasing here covers
+            # all paths; the call is idempotent, so the failure paths that
+            # already released stay correct.
+            _release_trigger_claim(trigger_claim)
 
 
 if __name__ == "__main__":
