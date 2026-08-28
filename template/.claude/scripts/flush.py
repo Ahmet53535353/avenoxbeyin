@@ -473,14 +473,17 @@ def maybe_trigger_compile(
     environment = os.environ.copy()
     environment.pop("BEYIN_INVOKED_BY", None)
     launcher = popen_factory or subprocess.Popen
+    compile_argv = [
+        sys.executable,
+        str(vault_root / ".claude" / "scripts" / "compile.py"),
+        "--trigger-claim",
+        str(trigger),
+    ]
+    if not on_schedule:
+        compile_argv.extend(["--before-date", current.date().isoformat()])
     try:
         launcher(
-            [
-                sys.executable,
-                str(vault_root / ".claude" / "scripts" / "compile.py"),
-                "--trigger-claim",
-                str(trigger),
-            ],
+            compile_argv,
             cwd=vault_root,
             env=environment,
             stdout=subprocess.DEVNULL,
