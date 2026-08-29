@@ -672,6 +672,29 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertNotIn(daily_path.name, state["ingested"])
         self.assertEqual(state["last_status"], "fail:no-changes")
 
+    def test_compile_rejects_temp_stage_inside_vault(self) -> None:
+        daily_path = self.daily / "2026-08-20.md"
+        daily_path.write_text("kalıcı günlük", encoding="utf-8")
+        unsafe_temp = self.vault / "tmp"
+        unsafe_temp.mkdir()
+        result = self._run_compile(
+            TMPDIR=str(unsafe_temp),
+            TEMP=str(unsafe_temp),
+            TMP=str(unsafe_temp),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._stub_calls("sonnet"), [])
+        state = json.loads(
+            (self.state / "compile-state.json").read_text(encoding="utf-8")
+        )
+        self.assertNotIn(daily_path.name, state["ingested"])
+        self.assertEqual(state["last_status"], "fail:policy")
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(health["error"], "stage-inside-vault")
+        self.assertEqual(list(unsafe_temp.glob("beyin-compile-stage-*")), [])
+
     def test_staged_deletion_is_rejected_before_promotion(self) -> None:
         daily_path = self.daily / "2026-08-20.md"
         daily_path.write_text("silme denemesi", encoding="utf-8")
@@ -823,8 +846,16 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             ],
         )
         call_cwd = Path(str(call["cwd"]))
-        self.assertEqual(call_cwd.parent.resolve(), self.state.resolve())
-        self.assertTrue(call_cwd.name.startswith("compile-stage-"))
+        # The stage must live outside the vault entirely (and thus outside
+        # .claude/), not under state_dir: Claude CLI auto-protects any path
+        # inside a project's .claude/ as "sensitive" and silently refuses
+        # Write/Edit there even under --permission-mode acceptEdits.
+        self.assertNotEqual(
+            os.path.commonpath([call_cwd.resolve(), self.vault.resolve()]),
+            str(self.vault.resolve()),
+        )
+        self.assertTrue(call_cwd.name.startswith("beyin-compile-stage-"))
+        self.assertFalse(call_cwd.exists())
         self.assertEqual(call["guard"], "beyin-scripts")
 
     def test_compile_stops_batch_on_first_failure(self) -> None:
