@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flush a Claude Code transcript into the vault's daily log safely."""
+"""Flush a Claude Code or Codex transcript into the vault's daily log safely."""
 
 # Windows portu: upstream "import fcntl" ile baslar ve Windows'ta modul
 # yuklenirken olur. Kilitleme _portalock uzerinden yapilir; davranis POSIX'te
@@ -116,6 +116,20 @@ def load_hook_input(path: Path) -> dict[str, Any]:
 
 
 def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
+    # Codex rollout format: ~/.codex/sessions/**/rollout-*.jsonl.  The
+    # user-facing turns are event_msg records; response/tool records are
+    # intentionally ignored so a hook does not duplicate or ingest internals.
+    if record.get("type") == "event_msg":
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            return None, None
+        payload_type = payload.get("type")
+        if payload_type == "user_message":
+            return "user", payload.get("message")
+        if payload_type == "agent_message":
+            return "assistant", payload.get("message")
+        return None, None
+
     message = record.get("message")
     if isinstance(message, dict):
         role = message.get("role") or record.get("type")

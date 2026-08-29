@@ -1,6 +1,6 @@
-# 🧠 avenoxbeyin v2: hatırlamayı unutmayan ikinci beyin
+# 🧠 avenoxbeyin v2.1: hatırlamayı unutmayan ikinci beyin
 
-[Obsidian](https://obsidian.md) + [Claude Code](https://claude.com/claude-code) üstünde çalışan,
+[Obsidian](https://obsidian.md) + [Claude Code](https://claude.com/claude-code) veya Codex üstünde çalışan,
 açık kaynak bir **ikinci beyin**. Yerel bir Markdown vault, kalıcı hafıza, sıfır bağımlılık,
 sıfır ekstra ücret. Dosya yönetmezsin, konuşursun.
 
@@ -36,6 +36,11 @@ claude "Read SETUP.md and follow it exactly to set up my second brain from this 
 Claude birkaç soru sorar (adın, ne iş yaptığın, AI ortağının adı), vault'u kurar, kancaları bağlar,
 masaüstüne 🧠 ikonlu bir kısayol koyar.
 
+Codex kullanıyorsan aynı repoda `codex` açıp `SETUP.md` dosyasını uygulatabilirsin. Kurulum
+`AGENTS.md`, `.agents/skills` ve mutlak yollu `.codex/hooks.json` üretir. İlk açılışta Codex'in
+`/hooks` ekranından proje kancalarını onaylaman gerekir; güven hash'leri kullanıcı adına
+değiştirilmez. Claude Code ve Codex aynı router, skill ve kanca kodunu okur; iki ayrı kopya yoktur.
+
 ### Yerel Windows (WSL değil)
 
 Yerel Windows için ayrı bir kurulum yolu vardır:
@@ -55,7 +60,7 @@ Ne yapıldığı, hangi Windows tuzaklarının ölçüldüğü ve nelerin iddia 
 Kapsam dışı: v1 → v2 yükseltme, WSL'den taşınma, PowerShell 5.1 ile çalıştırma.
 macOS ve Linux yolları değişmedi.
 
-### Zaten v1 beynin varsa
+### Zaten v1 veya v2.0 beynin varsa
 
 Aynı komut yeter. `SETUP.md` önce mevcut bir beyin arar, bulursa yükseltme moduna geçer ve işi
 tek bir script'e devreder: `scripts/upgrade.sh`. Yükseltme **sadece ekler**: mevcut hafıza
@@ -77,7 +82,7 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
 
 ---
 
-## v1 → v2
+## v1/v2.0 → v2.1
 
 | | v1 | v2 |
 | --- | --- | --- |
@@ -196,7 +201,8 @@ MIT, [LICENSE](LICENSE) dosyasına bak. PR'lar açık.
 
 ## In English (short version)
 
-**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code, with
+**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code or
+Codex, with
 memory that survives across sessions. v1 gave you continuity but depended on the model remembering
 to write its memory files. v2's thesis is that **memory must be a mechanism, not a discipline**: a
 `SessionEnd` and a `PreCompact` hook flush every conversation into `daily/` logs automatically via
@@ -204,7 +210,9 @@ a small background Haiku call, and once a day a Sonnet compile pass turns those 
 articles under `knowledge/`. The next session starts with that knowledge index already in context.
 
 Install: `git clone https://github.com/avenoxai/avenoxbeyin.git && cd avenoxbeyin && claude "Read
-SETUP.md and follow it exactly to set up my second brain from this template."` Already running v1?
+SETUP.md and follow it exactly to set up my second brain from this template."` Codex can follow
+the same `SETUP.md`; its project hooks are rendered with absolute paths and require one-time
+approval in `/hooks`. Already running v1 or v2.0?
 The same command detects it and hands the work to one committed script, `scripts/upgrade.sh`:
 additive only, your memory files are never touched, the settings merge is idempotent, and it takes
 a **verified** git snapshot before it changes anything. Two things it will ask you about, and stop
@@ -213,9 +221,11 @@ contents never move), and removing v1 hook wiring left behind in `settings.local
 stop firing twice. The `.beyin-version` stamp is the last write of all, only after every gate
 passes.
 
-Platform honesty: macOS is the tested path. The installer branches on `uname` and writes an XDG
-`.desktop` launcher instead of a macOS app on Linux, but that path has not been verified on a real
-Linux desktop. Windows is WSL-only, also unverified.
+Platform honesty: macOS is the tested POSIX path. The installer branches on `uname` and writes an
+XDG `.desktop` launcher instead of a macOS app on Linux, but that path has not been verified on a
+real Linux desktop. Native Windows has its own PowerShell installer and CI suite; the generated
+Codex wiring is regression-tested, but a live native-Windows Codex session has not yet been
+claimed as verified.
 
 No extra cost: everything runs on your existing Claude subscription through `claude -p`. No API
 keys, no paid services, bash and python3 stdlib only. Knowledge-compilation architecture credit:

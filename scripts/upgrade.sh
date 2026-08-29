@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# avenoxbeyin v1 -> v2 upgrade. Single process, transactional, fail loud.
+# avenoxbeyin v1/v2.0 -> v2.1 upgrade. Single process, transactional, fail loud.
 #
 # Why this file exists: the upgrade used to live as a chain of fenced Bash blocks in SETUP.md that
 # assigned shell variables in one block and used them in the next. Every Claude Bash call is a
@@ -21,11 +21,11 @@
 #             11 needs --confirm-local-hooks
 set -euo pipefail
 
-BEYIN_TARGET_VERSION="2.0.0"
-BEYIN_SCRIPT_VERSION="2.0.0"
+BEYIN_TARGET_VERSION="2.1.0"
+BEYIN_SCRIPT_VERSION="2.1.0"
 BEYIN_MEMORY_DIR_NAME="🔮 850-Companion"
 BEYIN_HOOK_FILES="lib.sh session-start.sh prompt-counter.sh session-end.sh pre-compact.sh"
-BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py"
+BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py"
 BEYIN_SKILL_DIRS="beyin-doktor gecmis-import"
 BEYIN_BACKUP_ROOT="${BEYIN_BACKUP_ROOT:-$HOME/.avenoxbeyin-yedek}"
 
@@ -237,9 +237,10 @@ if [ "$CUR_VERSION" = "$BEYIN_TARGET_VERSION" ] && [ "$STAGE" != "finalize" ]; t
   say "Yapılacak bir şey yok. Eksik varsa 'beyin doktor' çalıştır."
   exit 3
 fi
-if [ -n "$CUR_VERSION" ] && [ "$CUR_VERSION" != "$BEYIN_TARGET_VERSION" ]; then
-  say "UYARI: beklenmeyen sürüm damgası bulundu: '$CUR_VERSION'. Devam etmeden kullanıcıya sor."
-fi
+case "$CUR_VERSION" in
+  ""|2.0.0|"$BEYIN_TARGET_VERSION") ;;
+  *) die "uyumsuz sürüm damgası: '$CUR_VERSION' (desteklenen: boş v1, 2.0.0 veya $BEYIN_TARGET_VERSION)" ;;
+esac
 
 NEED_RENAME=0
 [ "$MEM_NAME" = "$BEYIN_MEMORY_DIR_NAME" ] || NEED_RENAME=1
@@ -418,6 +419,47 @@ if [ "$STAGE" = "apply" ]; then
     say "  $H (çalıştırılabilir, sözdizimi ✓)"
   done
 
+  step "7b/9 Claude + Codex ortak store ve Codex kanca kaydı"
+  mkdir -p "$V/.agents" "$V/.codex"
+
+  if [ ! -e "$V/AGENTS.md" ] && [ ! -L "$V/AGENTS.md" ]; then
+    ln -s "CLAUDE.md" "$V/AGENTS.md" || die "AGENTS.md symlink oluşturulamadı"
+  elif [ -L "$V/AGENTS.md" ] && [ "$(readlink "$V/AGENTS.md" 2>/dev/null || :)" = "CLAUDE.md" ]; then
+    :
+  elif [ -f "$V/AGENTS.md" ] && cmp -s "$V/AGENTS.md" "$V/CLAUDE.md"; then
+    rm -f "$V/AGENTS.md" || die "aynı AGENTS.md kaldırılamadı"
+    ln -s "CLAUDE.md" "$V/AGENTS.md" || die "AGENTS.md symlink oluşturulamadı"
+  else
+    die "AGENTS.md mevcut ve CLAUDE.md ile aynı değil; iki router'ı elle birleştirip yeniden çalıştır"
+  fi
+
+  if [ ! -e "$V/.agents/skills" ] && [ ! -L "$V/.agents/skills" ]; then
+    ln -s "../.claude/skills" "$V/.agents/skills" || die ".agents/skills symlink oluşturulamadı"
+  elif [ -L "$V/.agents/skills" ] && [ "$(readlink "$V/.agents/skills" 2>/dev/null || :)" = "../.claude/skills" ]; then
+    :
+  else
+    die ".agents/skills zaten bağımsız bir store; içerikleri .claude/skills ile elle birleştir"
+  fi
+
+  if [ ! -e "$V/.codex/hooks" ] && [ ! -L "$V/.codex/hooks" ]; then
+    ln -s "../.claude/hooks" "$V/.codex/hooks" || die ".codex/hooks symlink oluşturulamadı"
+  elif [ -L "$V/.codex/hooks" ] && [ "$(readlink "$V/.codex/hooks" 2>/dev/null || :)" = "../.claude/hooks" ]; then
+    :
+  else
+    die ".codex/hooks zaten bağımsız bir store; içerikleri .claude/hooks ile elle birleştir"
+  fi
+
+  python3 "$V/.claude/scripts/render_codex_hooks.py" --vault "$V" --platform posix \
+    >/dev/null || die ".codex/hooks.json üretilemedi"
+  record "AGENTS.md"
+  record ".agents/skills"
+  record ".codex/hooks"
+  record ".codex/hooks.json"
+  say "  AGENTS.md -> CLAUDE.md"
+  say "  .agents/skills -> .claude/skills"
+  say "  .codex/hooks -> .claude/hooks"
+  say "  .codex/hooks.json (mutlak yollar, SessionEnd 3s)"
+
   step "8/9 settings.json kanca kaydı (birleştir, tekrar çalıştırılabilir)"
   python3 - "$V" "$REPO" <<'PY' || die "settings.json birleştirme başarısız"
 import json, os, sys, tempfile
@@ -571,6 +613,53 @@ for S in $BEYIN_SKILL_DIRS; do
   gate "skill $S" "$R"
 done
 
+R="ok"
+[ -L "$V/AGENTS.md" ] && [ "$(readlink "$V/AGENTS.md" 2>/dev/null || :)" = "CLAUDE.md" ] || R="AGENTS.md -> CLAUDE.md symlink yok"
+gate "ortak router" "$R"
+
+R="ok"
+[ -L "$V/.agents/skills" ] && [ "$(readlink "$V/.agents/skills" 2>/dev/null || :)" = "../.claude/skills" ] || R=".agents/skills ortak store değil"
+gate "ortak skill store" "$R"
+
+R="ok"
+[ -L "$V/.codex/hooks" ] && [ "$(readlink "$V/.codex/hooks" 2>/dev/null || :)" = "../.claude/hooks" ] || R=".codex/hooks ortak store değil"
+gate "ortak kanca store" "$R"
+
+R=$(python3 - "$V" <<'PY'
+import json, os, sys
+v = os.path.realpath(sys.argv[1])
+p = os.path.join(v, ".codex", "hooks.json")
+try:
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+except (OSError, ValueError) as exc:
+    print("hooks.json okunamadı: %s" % exc)
+    raise SystemExit(0)
+wanted = {
+    "SessionStart": ("session-start.sh", 15),
+    "UserPromptSubmit": ("prompt-counter.sh", 5),
+    "PreCompact": ("pre-compact.sh", 10),
+    "SessionEnd": ("session-end.sh", 3),
+}
+bad = []
+for event, (name, timeout) in wanted.items():
+    found = []
+    for matcher in (d.get("hooks", {}).get(event) or []):
+        for hook in (matcher.get("hooks") or []):
+            command = hook.get("command", "") or ""
+            if name in command:
+                found.append(hook)
+    if len(found) != 1:
+        bad.append("%s=%d" % (event, len(found)))
+    elif not os.path.isabs(found[0].get("command", "").strip("'\"")):
+        bad.append("%s göreli" % event)
+    elif found[0].get("timeout") != timeout:
+        bad.append("%s timeout" % event)
+print("ok" if not bad else ", ".join(bad))
+PY
+) || R="kontrol çalışmadı"
+gate "Codex mutlak kanca kaydı" "$R"
+
 for D in "daily" "knowledge/concepts" "knowledge/connections" ".claude/scripts/.state"; do
   R="ok"; [ -d "$V/$D" ] || R="klasör yok"
   gate "klasör $D" "$R"
@@ -642,7 +731,8 @@ if command -v git >/dev/null 2>&1 && [ -d "$V/.git" ]; then
   git -C "$V" reset -q >/dev/null 2>&1 || :
   ALLOW_TMP=$(mktemp)
   printf '%s\n' ".gitignore" "daily" "knowledge" ".claude/hooks" ".claude/scripts" \
-                ".claude/skills" ".claude/settings.json" "$BEYIN_MEMORY_DIR_NAME" > "$ALLOW_TMP"
+                ".claude/skills" ".claude/settings.json" ".agents" ".codex" "AGENTS.md" \
+                "$BEYIN_MEMORY_DIR_NAME" > "$ALLOW_TMP"
   while IFS= read -r P; do
     [ -n "$P" ] || continue
     [ -e "$V/$P" ] || continue

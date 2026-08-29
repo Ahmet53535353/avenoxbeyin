@@ -44,6 +44,9 @@ def load_module(name: str, path: Path):
 
 
 FLUSH = load_module("beyin_flush_test", SOURCE_SCRIPTS / "flush.py")
+CODEX_RENDERER = load_module(
+    "beyin_codex_renderer_test", SOURCE_SCRIPTS / "render_codex_hooks.py"
+)
 
 
 class ScriptsTest(unittest.TestCase):
@@ -274,6 +277,77 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertLessEqual(len(capped), 15_000)
         self.assertTrue(capped.startswith("**"))
         self.assertRegex(capped, r"^\*\*(User|Assistant):\*\* id\d+:")
+
+    def test_codex_rollout_transcript_extraction(self) -> None:
+        transcript = self.root / "rollout.jsonl"
+        records = [
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "Codex kullanıcı mesajı"}},
+            {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "Codex yanıtı"}},
+            {"type": "event_msg", "payload": {"type": "task_started", "message": "yoksay"}},
+        ]
+        transcript.write_text(
+            "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            FLUSH.read_transcript(transcript),
+            [
+                ("user", "Codex kullanıcı mesajı"),
+                ("assistant", "Codex yanıtı"),
+            ],
+        )
+
+    def test_codex_hook_renderer_is_absolute_idempotent_and_preserves_unrelated(self) -> None:
+        (self.vault / ".claude" / "hooks").mkdir(parents=True)
+        destination = self.vault / ".codex" / "hooks.json"
+        destination.parent.mkdir(parents=True)
+        destination.write_text(
+            json.dumps({
+                "hooks": {
+                    "Stop": [{"hooks": [{"type": "command", "command": "custom-stop"}]}],
+                    "SessionStart": [{"hooks": [{"type": "command", "command": "/old/.codex/hooks/session-start.sh"}]}],
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        first = CODEX_RENDERER.write(self.vault, "posix")
+        first_body = first.read_text(encoding="utf-8")
+        second = CODEX_RENDERER.write(self.vault, "posix")
+        self.assertEqual(first_body, second.read_text(encoding="utf-8"))
+
+        payload = json.loads(first_body)
+        self.assertEqual(payload["hooks"]["Stop"][0]["hooks"][0]["command"], "custom-stop")
+        for event, (stem, timeout, _status) in CODEX_RENDERER.HOOKS.items():
+            entries = payload["hooks"][event]
+            managed = [
+                hook
+                for matcher in entries
+                for hook in matcher["hooks"]
+                if f"{stem}.sh" in hook["command"]
+            ]
+            self.assertEqual(len(managed), 1)
+            self.assertTrue(managed[0]["command"].startswith("/"))
+            self.assertEqual(managed[0]["timeout"], timeout)
+        self.assertEqual(payload["hooks"]["SessionEnd"][-1]["hooks"][0]["timeout"], 3)
+
+        CODEX_RENDERER.write(self.vault, "windows")
+        windows_payload = json.loads(destination.read_text(encoding="utf-8"))
+        self.assertEqual(
+            windows_payload["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "custom-stop",
+        )
+        for event, (stem, timeout, _status) in CODEX_RENDERER.HOOKS.items():
+            managed = [
+                hook
+                for matcher in windows_payload["hooks"][event]
+                for hook in matcher["hooks"]
+                if f"{stem}.ps1" in hook["command"]
+            ]
+            self.assertEqual(len(managed), 1)
+            self.assertTrue(managed[0]["command"].startswith("pwsh.exe "))
+            self.assertEqual(managed[0]["timeout"], timeout)
 
     def test_flush_bos_appends_nothing_and_records_success(self) -> None:
         transcript = self._write_transcript([("user", "yalnızca selam")])

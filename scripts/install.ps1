@@ -307,6 +307,22 @@ Resolve-BeyinPlaceholders -Root $VaultPath -Values @{
     TODAY      = (Get-Date -Format 'yyyy-MM-dd')
 }
 
+# Windows checkouts do not reliably preserve repository symlinks. Materialize
+# the same router and skill content for Codex, while .claude remains canonical
+# for the executable engine on this platform.
+Copy-Item -LiteralPath (Join-Path $VaultPath 'CLAUDE.md') `
+          -Destination (Join-Path $VaultPath 'AGENTS.md') -Force
+$agentSkills = Join-Path $VaultPath '.agents\skills'
+New-Item -ItemType Directory -Force -Path $agentSkills | Out-Null
+Copy-Item -Path (Join-Path $VaultPath '.claude\skills\*') `
+          -Destination $agentSkills -Recurse -Force
+
+& $report.Python (Join-Path $VaultPath '.claude\scripts\render_codex_hooks.py') `
+    --vault $VaultPath --platform windows | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw 'Codex hooks.json üretilemedi.'
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $VaultPath '.claude\scripts\.state') | Out-Null
 
 Merge-BeyinHooks -SettingsPath (Join-Path $VaultPath '.claude\settings.json') `
@@ -326,4 +342,5 @@ Write-Host ""
 Write-Host "Kurulum tamam: $VaultPath"
 Write-Host "  motor : .claude\scripts  (python: $($report.Python))"
 Write-Host "  kanca : 4 adet, .claude\settings.json icinde kayitli"
+Write-Host "  codex : AGENTS.md + .agents\skills + .codex\hooks.json"
 exit 0

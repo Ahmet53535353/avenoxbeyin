@@ -10,7 +10,7 @@ loglar tazeliğini koruyor mu, vault kirlenmiş mi. Amaç sessiz arızayı gör�
 
 ## Nasıl çalışırsın
 
-1. Vault kökünde (CLAUDE.md'nin bulunduğu klasör) çalış. Tüm yollar göreceli, mutlak yol yazma.
+1. Vault kökünde (CLAUDE.md/AGENTS.md'nin bulunduğu klasör) çalış. Tüm yollar göreceli, mutlak yol yazma.
 2. Aşağıdaki kontrolleri **Bash ile sırayla çalıştır**. Komutları olduğu gibi kullan, tahmin etme.
 3. Her kontrolün çıktısını 🟢 / 🟡 / 🔴 olarak sınıfla.
 4. Sonucu tek bir tabloda ver, her 🔴 için bir düzeltme satırı yaz.
@@ -49,6 +49,16 @@ for f in .claude/hooks/*.sh; do if grep -q 'BEYIN_INVOKED_BY' "$f"; then echo "$
 🟢 hepsinde var. 🔴 eksik. Guard'ı olmayan hook, arka plan `claude -p` çağrısında tekrar
 tetiklenir ve sonsuz döngü riski doğar.
 Düzeltme: dosyanın shebang'inden hemen sonraki satıra `[ -n "${BEYIN_INVOKED_BY:-}" ] && exit 0` ekle.
+
+### 3b. Codex router, skill ve kanca bağlantıları
+
+```bash
+test -L AGENTS.md && [ "$(readlink AGENTS.md)" = "CLAUDE.md" ] && echo "router: ortak" || echo "router: AYRI/YOK"; test -L .agents/skills && [ "$(readlink .agents/skills)" = "../.claude/skills" ] && echo "skills: ortak" || echo "skills: AYRI/YOK"; test -L .codex/hooks && [ "$(readlink .codex/hooks)" = "../.claude/hooks" ] && echo "hooks: ortak" || echo "hooks: AYRI/YOK"; python3 -c "import json,os;d=json.load(open('.codex/hooks.json')); w={'SessionStart':('session-start.sh',15),'UserPromptSubmit':('prompt-counter.sh',5),'PreCompact':('pre-compact.sh',10),'SessionEnd':('session-end.sh',3)}; print('codex:', 'ok' if all(sum(n in (h.get('command') or '') and os.path.isabs((h.get('command') or '').strip(chr(39)+chr(34))) and h.get('timeout')==t for m in d.get('hooks',{}).get(e,[]) for h in m.get('hooks',[]))==1 for e,(n,t) in w.items()) else 'BOZUK')" 2>/dev/null || echo "codex: BOZUK/YOK"
+```
+
+🟢 dört satır da ortak/ok. 🔴 ise Codex aynı motoru görmüyor veya göreli/eski bir komut okuyor.
+Düzeltme: `python3 .claude/scripts/render_codex_hooks.py --vault "$PWD" --platform posix`, sonra
+Codex içinde `/hooks` ekranından değişen proje kancalarını onayla. Güven hash'ini elle yazma.
 
 ### 4. python3 ve claude CLI yolda mı
 
@@ -140,7 +150,7 @@ Düzeltme: repo yoksa `git init` ve ilk commit. Birikme varsa commit at.
 if [ -f .beyin-version ]; then echo "surum: $(head -1 .beyin-version)"; else echo "surum: DOSYA YOK, v1 vault"; fi
 ```
 
-🟢 `2.0.0`. 🟡 dosya yok: bu bir v1 vault, yükseltme yapılabilir.
+🟢 `2.1.0`. 🟡 `2.0.0` veya dosya yok: harness-neutral yükseltme yapılabilir.
 Düzeltme: SETUP.md içindeki yükseltme yolunu (B modu) uygula. Yükseltme mevcut hafıza
 dosyalarına dokunmaz, sadece eksik parçaları ekler.
 
@@ -210,6 +220,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | --- | --- | --- |
 | Hook dosyaları | 🟢 | dördü de yerinde ve çalıştırılabilir |
 | settings.json bağlantısı | 🟢 | dört olay da bağlı |
+| Codex bağlantıları | 🟢 | router, skill ve kanca store ortak; hooks.json mutlak |
 | Özyineleme koruması | 🟢 | hepsinde var |
 | python3 ve claude | 🟢 | python3 3.11.6, claude var |
 | python3-missing işareti | 🟢 | işaret yok |
@@ -219,7 +230,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | Bilgi indeksi | 🟢 | 42 satır |
 | iCloud çakışmaları | 🟢 | temiz |
 | Git | 🟢 | repo var, 3 dosya kaydedilmemiş |
-| Sürüm | 🟢 | 2.0.0 |
+| Sürüm | 🟢 | 2.1.0 |
 | Kurallar | 🟢 | var, 24 satır |
 | Çift etkin kanca | 🔴 | SessionEnd 2 kez bağlı |
 | Sır yedeği artığı | 🟢 | temiz |
