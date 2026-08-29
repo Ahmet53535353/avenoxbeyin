@@ -760,6 +760,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             str(self.vault.resolve()),
         )
         self.assertTrue(call_cwd.name.startswith("beyin-compile-stage-"))
+        self.assertFalse(call_cwd.exists())
         self.assertEqual(call["guard"], "beyin-scripts")
 
     def test_compile_stops_batch_on_first_failure(self) -> None:
