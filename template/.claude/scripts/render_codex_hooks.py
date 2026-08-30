@@ -37,6 +37,7 @@ def _managed(command: str) -> bool:
         f"/.claude/hooks/{name}.sh" in normalized
         or f"/.claude/hooks/{name}.ps1" in normalized
         or f"/.codex/hooks/{name}.sh" in normalized
+        or f"/.codex/hooks/{name}.ps1" in normalized
         for name, _, _ in HOOKS.values()
     )
 
