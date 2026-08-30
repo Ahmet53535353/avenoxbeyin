@@ -58,6 +58,21 @@ new_case() {
   mktemp -d "$TEST_TMP/vaka.XXXXXX"
 }
 
+# Resolve a pyenv shim to its real underlying binary. pyenv shims are bash
+# scripts that need PYENV_ROOT etc.; the env -i in test_no_git_binary_uses_external_backup
+# strips those, which would make the symlinked python3 exit 127 and the
+# upgrade die silently in local_hooks_report.
+pyenv_resolve_python() {
+  local tool="$1"
+  local pyenv_root="${PYENV_ROOT:-$HOME/.pyenv}"
+  if [ -x "$pyenv_root/libexec/pyenv" ]; then
+    PYENV_ROOT="$pyenv_root" "$pyenv_root/libexec/pyenv" which "$tool" 2>/dev/null \
+      || PYENV_ROOT="$pyenv_root" "$pyenv_root/libexec/pyenv" exec "$tool" -c 'import sys; print(sys.executable)' 2>/dev/null
+    return
+  fi
+  command -v "$tool" 2>/dev/null
+}
+
 # İçerik, dosya türü ve izin bitlerini özetler; .git ağacını bilerek dışarıda bırakır.
 tree_digest() {
   python3 - "$1" <<'PY'
@@ -416,6 +431,13 @@ test_no_git_binary_uses_external_backup() {
   local tool tool_path
   for tool in bash sh python3 cp mv rm ln find sed awk grep printf date mkdir chmod wc tr head tail sort stat basename dirname cat mktemp; do
     tool_path=$(command -v "$tool" 2>/dev/null) || continue
+    # Resolve pyenv shims to the real binary: the shim is a bash script that
+    # needs PYENV_ROOT and PYENV_DEBUG etc., all of which env -i strips.
+    # Calling the shim with a clean env makes python3 exit 127, which makes
+    # upgrade.sh die in local_hooks_report with no helpful error.
+    case "$tool_path" in
+      */.pyenv/shims/*) tool_path=$(pyenv_resolve_python "$tool") ;;
+    esac
     ln -sf "$tool_path" "$fake_path/$tool" 2>/dev/null || :
   done
   if PATH="$fake_path" command -v git >/dev/null 2>&1; then
