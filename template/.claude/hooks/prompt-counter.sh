@@ -11,9 +11,18 @@ BEYIN_SESSION_KEY=$(beyin_session_key 2>/dev/null || :)
 BEYIN_PROMPT_COUNT_FILE="$BEYIN_STATE_DIR/prompt_count.$BEYIN_SESSION_KEY"
 BEYIN_LOCK_DIR="$BEYIN_PROMPT_COUNT_FILE.lock"
 BEYIN_LOCK_ATTEMPT=0
+# Tight retry loop: 10ms sleep between attempts. 100 parallel forks acquire
+# in FIFO order through the kernel lock table; each holds the lock for
+# roughly 10ms (one bash fork plus read and write). 10000 retries at 10ms
+# gives a 100s wall-clock budget: comfortable headroom for any plausible
+# burst. The old fixed retry cap (500 at 10ms = 5s) was too coarse: many
+# processes bailed out before the queue drained, silently losing their
+# increments (regression: hooks_test.sh:12 concurrent-count != 100).
 while ! mkdir "$BEYIN_LOCK_DIR" 2>/dev/null; do
   BEYIN_LOCK_ATTEMPT=$((BEYIN_LOCK_ATTEMPT + 1))
-  [ "$BEYIN_LOCK_ATTEMPT" -lt 500 ] || exit 0
+  if [ "$BEYIN_LOCK_ATTEMPT" -gt 10000 ]; then
+    exit 0
+  fi
   sleep 0.01 2>/dev/null || sleep 1 2>/dev/null || exit 0
 done
 trap 'rmdir "$BEYIN_LOCK_DIR" 2>/dev/null || :' EXIT
