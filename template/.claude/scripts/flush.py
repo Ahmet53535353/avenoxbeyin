@@ -128,7 +128,18 @@ def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
             return "user", payload.get("message")
         if payload_type == "agent_message":
             return "assistant", payload.get("message")
-        return None, None
+        if payload_type == "item_completed":
+            item = payload.get("item")
+            if not isinstance(item, dict):
+                return None, None
+            item_type = item.get("type")
+            if item_type == "UserMessage":
+                return "user", item.get("content")
+            if item_type == "AgentMessage":
+                return "assistant", item.get("content")
+            # Reasoning / CommandExecution / FileChange intentionally skipped:
+            # the summary is drawn from conversation, not internals.
+            return None, None
 
     message = record.get("message")
     if isinstance(message, dict):
@@ -137,11 +148,15 @@ def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
     return record.get("role") or record.get("type"), record.get("content")
 
 
+def _is_text(block_type: Any) -> bool:
+    return isinstance(block_type, str) and block_type.lower() == "text"
+
+
 def _text_from_content(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, dict):
-        if content.get("type") == "text" and isinstance(content.get("text"), str):
+        if _is_text(content.get("type")) and isinstance(content.get("text"), str):
             return content["text"]
         return ""
     if not isinstance(content, list):
@@ -149,7 +164,7 @@ def _text_from_content(content: Any) -> str:
 
     text_parts = []
     for block in content:
-        if not isinstance(block, dict) or block.get("type") != "text":
+        if not isinstance(block, dict) or not _is_text(block.get("type")):
             continue
         text = block.get("text")
         if isinstance(text, str):
