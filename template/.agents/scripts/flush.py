@@ -304,20 +304,82 @@ def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
     return result.stdout.strip(), None
 
 
+def _find_agy_executable() -> str | None:
+    found = shutil.which("agy") or shutil.which("agy.exe")
+    if found:
+        return found
+    candidates = [
+        Path(os.path.expanduser(r"~\AppData\Local\agy\bin\agy.exe")),
+        Path(os.path.expanduser(r"~\AppData\Local\Programs\agy\bin\agy.exe")),
+        Path(os.path.expanduser(r"~/.local/bin/agy")),
+        Path("/usr/local/bin/agy"),
+        Path("/opt/homebrew/bin/agy"),
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def _run_agy(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
+    agy = _find_agy_executable()
+    if agy is None:
+        return None, "agy-cli-missing"
+
+    environment = os.environ.copy()
+    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    try:
+        with tempfile.TemporaryDirectory(prefix="beyin-flush-") as temporary:
+            temporary_path = Path(temporary).resolve()
+            result = subprocess.run(
+                [
+                    agy,
+                    "-p",
+                    prompt,
+                    "--disable-slash-commands",
+                    "--effort",
+                    "low",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=temporary_path,
+                env=environment,
+                timeout=120,
+                check=False,
+            )
+    except subprocess.TimeoutExpired:
+        return None, "agy-timeout"
+    except Exception as exc:
+        return None, f"agy-exec-error:{exc}"
+
+    if result.returncode != 0:
+        return None, f"agy-exit-{result.returncode}"
+    return result.stdout.strip(), None
+
+
 def _run_llm(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
-    # 1. Check Gemini API
+    # 1. Antigravity CLI native print mode (-p) (Zero API keys needed!)
+    agy = _find_agy_executable()
+    if agy is not None:
+        text, err = _run_agy(prompt, vault_root)
+        if text:
+            return text, None
+
+    # 2. Check Gemini API
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if api_key:
         text, err = _run_gemini_api(prompt, api_key)
         if text:
             return text, None
 
-    # 2. Check Claude CLI
+    # 3. Check Claude CLI
     claude = shutil.which("claude")
     if claude is not None:
         return _run_claude(prompt, vault_root)
 
-    return None, "llm-provider-missing (Set GEMINI_API_KEY or install claude CLI)"
+    return None, "llm-provider-missing"
 
 
 def _append_daily(
@@ -379,20 +441,21 @@ def flush_transcript(
     prompt = build_flush_prompt(rendered)
     summary, error = _run_llm(prompt, vault_root)
 
-    if error:
-        write_health(state_dir, f"llm-error:{error}")
-        return False
-
-    if not summary:
-        return False
-
-    if summary.strip() == "FLUSH_BOS":
+    if error or not summary:
+        write_health(state_dir, f"llm-error:{error or 'empty-summary'}", warning=True)
+        # Fallback: Save conversation turns directly so no session is ever lost
+        summary = (
+            "## Bağlam\n(Oturum günlüğü - Yapay zeka özeti için GEMINI_API_KEY tanımlanabilir)\n\n"
+            f"## Önemli Konuşmalar\n{rendered}\n\n"
+            "## Alınan Kararlar\n-\n\n"
+            "## Öğrenilenler\n-\n\n"
+            "## Yapılacaklar\n-"
+        )
+    elif summary.strip() == "FLUSH_BOS":
         return True
-
-    if not validate_summary(summary):
+    elif not validate_summary(summary):
         write_health(state_dir, "summary-validation-failed", warning=True)
-        # We still write with a notice rather than dropping the session
-        summary = f"## Bağlam\n(Otomatik format doğrulanamadı)\n\n{summary}"
+        summary = f"## Bağlam\n(Otomatik format)\n\n{summary}"
 
     _append_daily(vault_root, summary, reason, now)
 

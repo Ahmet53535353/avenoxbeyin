@@ -106,6 +106,59 @@ class AntigravityIntegrationTest(unittest.TestCase):
         finally:
             tf_path.unlink(missing_ok=True)
 
+    def test_recursion_guard(self):
+        with tempfile.TemporaryDirectory(prefix="test-agy-guard-") as temp_dir:
+            vault_path = Path(temp_dir) / "TestOS"
+            install_antigravity.install_vault(
+                vault_path=vault_path,
+                user_name="TestUser",
+                user_bio="AI Researcher",
+                companion="Atlas",
+                os_name="TestOS",
+            )
+            pre_inv = vault_path / ".agents" / "scripts" / "pre_invocation.py"
+            stop_script = vault_path / ".agents" / "scripts" / "stop.py"
+
+            env = os.environ.copy()
+            env["BEYIN_INVOKED_BY"] = "beyin-scripts"
+
+            # PreInvocation should return empty JSON immediately
+            res1 = subprocess.run(
+                [sys.executable, str(pre_inv)],
+                input=json.dumps({"invocationNum": 1}),
+                text=True,
+                capture_output=True,
+                env=env,
+                encoding="utf-8",
+            )
+            self.assertEqual(res1.returncode, 0)
+            self.assertEqual(json.loads(res1.stdout), {})
+
+            # Stop should return empty JSON immediately
+            res2 = subprocess.run(
+                [sys.executable, str(stop_script)],
+                input=json.dumps({}),
+                text=True,
+                capture_output=True,
+                env=env,
+                encoding="utf-8",
+            )
+            self.assertEqual(res2.returncode, 0)
+            self.assertEqual(json.loads(res2.stdout), {})
+
+    def test_summary_validation(self):
+        valid = (
+            "## Bağlam\nTest bağlamı\n\n"
+            "## Önemli Konuşmalar\nTest konuşma\n\n"
+            "## Alınan Kararlar\nTest karar\n\n"
+            "## Öğrenilenler\nTest öğrenilen\n\n"
+            "## Yapılacaklar\nTest yapılacak"
+        )
+        self.assertTrue(flush.validate_summary(valid))
+
+        invalid = "## Bağlam\nSadece bir bölüm var"
+        self.assertFalse(flush.validate_summary(invalid))
+
 
 if __name__ == "__main__":
     unittest.main()

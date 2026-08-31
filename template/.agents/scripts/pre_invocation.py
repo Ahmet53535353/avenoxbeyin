@@ -40,6 +40,10 @@ def _get_yesterday_str() -> str:
 
 
 def main() -> None:
+    if os.environ.get("BEYIN_INVOKED_BY"):
+        sys.stdout.write("{}\n")
+        return
+
     # Read stdin safely
     try:
         raw = sys.stdin.read()

@@ -211,6 +211,88 @@ def _run_gemini_compile(prompt: str, api_key: str) -> tuple[dict[str, Any] | Non
         return None, f"gemini-error-{exc}"
 
 
+def _find_agy_executable() -> str | None:
+    found = shutil.which("agy") or shutil.which("agy.exe")
+    if found:
+        return found
+    candidates = [
+        Path(os.path.expanduser(r"~\AppData\Local\agy\bin\agy.exe")),
+        Path(os.path.expanduser(r"~\AppData\Local\Programs\agy\bin\agy.exe")),
+        Path(os.path.expanduser(r"~/.local/bin/agy")),
+        Path("/usr/local/bin/agy"),
+        Path("/opt/homebrew/bin/agy"),
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def _run_agy_compile(prompt: str) -> tuple[dict[str, Any] | None, str | None]:
+    agy = _find_agy_executable()
+    if agy is None:
+        return None, "agy-cli-missing"
+
+    environment = os.environ.copy()
+    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    try:
+        with tempfile.TemporaryDirectory(prefix="beyin-compile-") as temporary:
+            compile_instruction = (
+                prompt + "\n\n"
+                "ÖNEMLİ: Çıktıyı SADECE geçerli bir JSON nesnesi olarak döndür. "
+                "Markdown kod bloğu (```json), selamlama veya açıklama yazma. "
+                "JSON formatı:\n"
+                "{\n"
+                '  "concepts": [{"slug": "...", "content": "..."}],\n'
+                '  "connections": [{"slug": "...", "content": "..."}],\n'
+                '  "index_content": "...",\n'
+                '  "log_entry": "..."\n'
+                "}"
+            )
+            result = subprocess.run(
+                [
+                    agy,
+                    "-p",
+                    compile_instruction,
+                    "--disable-slash-commands",
+                    "--effort",
+                    "low",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=temporary,
+                env=environment,
+                timeout=300,
+                check=False,
+            )
+    except subprocess.TimeoutExpired:
+        return None, "agy-timeout"
+    except Exception as exc:
+        return None, f"agy-exec-error:{exc}"
+
+    if result.returncode != 0:
+        return None, f"agy-exit-{result.returncode}"
+
+    raw_text = result.stdout.strip()
+    if not raw_text:
+        return None, "agy-empty-output"
+
+    if "```" in raw_text:
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_text)
+        if match:
+            raw_text = match.group(1).strip()
+
+    try:
+        parsed = json.loads(raw_text)
+        if isinstance(parsed, dict):
+            return parsed, None
+        return None, "agy-output-not-dict"
+    except json.JSONDecodeError as exc:
+        return None, f"agy-json-decode-error:{exc}"
+
+
 def build_compile_prompt(index_text: str, daily_name: str, daily_body: str, timestamp: str) -> str:
     return f"""BELLEK ŞEMASI KURALLARI
 - Her kavram dosyası knowledge/concepts/<ascii-kebab-slug>.md yolunda olmalı.
@@ -234,6 +316,15 @@ TALİMATLAR:
 """
 
 
+MAX_DAILY_CHARS = 10_000
+
+
+def _cap_daily(text: str, limit: int = MAX_DAILY_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
 def compile_daily(vault_root: Path, daily_path: Path) -> bool:
     knowledge_dir = vault_root / "knowledge"
     concepts_dir = knowledge_dir / "concepts"
@@ -245,24 +336,32 @@ def compile_daily(vault_root: Path, daily_path: Path) -> bool:
     log_path = knowledge_dir / "log.md"
 
     index_text = index_path.read_text(encoding="utf-8") if index_path.exists() else "# Bilgi İndeksi\n\n| Makale | Özet | Kaynak | Güncellendi |\n| --- | --- | --- | --- |\n"
-    daily_body = daily_path.read_text(encoding="utf-8")
+    daily_body = _cap_daily(daily_path.read_text(encoding="utf-8"))
     iso_ts = _iso_now()
 
     prompt = build_compile_prompt(index_text, daily_path.name, daily_body, iso_ts)
 
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        write_health(vault_root / ".agents" / "scripts" / ".state", "gemini-api-key-missing")
-        return False
+    result = None
+    err = None
 
-    result, err = _run_gemini_compile(prompt, api_key)
+    # 1. Antigravity CLI native print mode (-p) (Zero API keys required!)
+    agy = shutil.which("agy") or shutil.which("agy.exe")
+    if agy is not None:
+        result, err = _run_agy_compile(prompt)
+
+    # 2. Check Gemini API
+    if result is None:
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        if api_key:
+            result, err = _run_gemini_compile(prompt, api_key)
+
     if err or not result:
-        write_health(vault_root / ".agents" / "scripts" / ".state", f"compile-llm-failed:{err}")
+        write_health(vault_root / ".agents" / "scripts" / ".state", f"compile-llm-failed:{err or 'empty-result'}")
         return False
 
     # Apply concepts
     for concept in result.get("concepts", []):
-        slug = re.sub(r"[^a-zA-Z0-9_-]", "-", concept.get("slug", "").strip()).strip("-").lower()
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "-", concept.get("slug", "").strip()).strip("-").lower()
         if not slug:
             continue
         content = concept.get("content", "").strip()
@@ -271,7 +370,7 @@ def compile_daily(vault_root: Path, daily_path: Path) -> bool:
 
     # Apply connections
     for conn in result.get("connections", []):
-        slug = re.sub(r"[^a-zA-Z0-9_--]", "-", conn.get("slug", "").strip()).strip("-").lower()
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "-", conn.get("slug", "").strip()).strip("-").lower()
         if not slug:
             continue
         content = conn.get("content", "").strip()
