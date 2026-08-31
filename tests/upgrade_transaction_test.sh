@@ -495,6 +495,42 @@ bash -n "$UPGRADE"
 bash -n "$FIXTURE"
 bash -n "$0"
 
+test_untracks_tracked_pycache() {
+  # A vault upgraded before .gitignore knew about __pycache__ carries compiled bytecode in the
+  # index. Adding the ignore rule alone does not fix that, so the upgrade must also untrack it,
+  # and it must leave the files on disk: python regenerates them, they are not the user's data.
+  local case_dir vault pyc rel still_tracked
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+
+  rel=".claude/scripts/__pycache__/flush.cpython-312.pyc"
+  pyc="$vault/$rel"
+  mkdir -p "$(dirname "$pyc")"
+  printf 'not real bytecode, only a tracked placeholder\n' > "$pyc"
+  git -C "$vault" add -f -- "$rel" >/dev/null 2>&1 || { diag "fikstür: .pyc eklenemedi"; return 1; }
+  git -C "$vault" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q -m "v1: derlenmis bytecode izleniyor" || { diag "fikstür: commit basarisiz"; return 1; }
+  git -C "$vault" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
+    || { diag "fikstür kurulamadi: .pyc izlenmiyor"; return 1; }
+
+  run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
+  assert_eq 0 "$RUN_STATUS" "apply basarisiz" || { diag "$(cat "$case_dir/apply.out")"; return 1; }
+  run_upgrade "$case_dir" "$case_dir/finalize.out" --vault "$vault" --stage finalize
+  assert_eq 0 "$RUN_STATUS" "finalize basarisiz" || { diag "$(cat "$case_dir/finalize.out")"; return 1; }
+
+  assert_file "$pyc" || { diag ".pyc diskten silinmis olmamali"; return 1; }
+
+  still_tracked=$(git -C "$vault" ls-files -- '*.pyc' '*/__pycache__/*' | tr '\n' ' ')
+  if [ -n "$still_tracked" ]; then
+    diag "yukseltmeden sonra hala izlenen bytecode var: $still_tracked"
+    return 1
+  fi
+  grep -qxF '__pycache__/' "$vault/.gitignore" || { diag ".gitignore __pycache__/ icermiyor"; return 1; }
+  grep -qxF '*.pyc' "$vault/.gitignore" || { diag ".gitignore *.pyc icermiyor"; return 1; }
+}
+
 run_case "--vault olmadan apply kullanım hatası verir ve yazmaz" test_missing_vault
 run_case "göreli --vault kullanım hatasıyla reddedilir" test_relative_vault
 run_case "kök dizin vault olarak reddedilir ve değişmez" test_root_vault
@@ -512,6 +548,7 @@ run_case "git ikilisi yokken harici doğrulanmış yedek dalı gerçekten çalı
 run_case "yeniden adlandırma onayı yoksa apply atomik olarak 10 döndürür" test_rename_confirmation_is_atomic
 run_case "yeniden adlandırma Core.md içeriğini aynen korur" test_rename_preserves_core
 run_case "kullanıcının kendi kancası yükseltmede aynen korunur" test_user_hook_preserved
+run_case "izlenen __pycache__ artıkları izden çıkarılır ama diskte kalır" test_untracks_tracked_pycache
 
 printf '1..%s\n' "$TEST_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

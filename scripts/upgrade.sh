@@ -122,6 +122,27 @@ assert_no_secret_staged() {
   fi
 }
 
+untrack_ignored_pycache() {
+  # .gitignore now carries __pycache__/ and *.pyc, but an ignore rule never untracks a path that
+  # is already in the index. A vault upgraded before those rules existed keeps its compiled
+  # bytecode tracked: the finalize gate imports the scripts, python rewrites the .pyc files, and
+  # "git add" stages them into the upgrade commit on every single run. Untrack them here, before
+  # the snapshot, and leave every file on disk.
+  #
+  # Deliberately separate from untrack_ignored_secrets: bytecode is not a secret, so this must not
+  # print the "revoke your API key" warning that function ends with.
+  command -v git >/dev/null 2>&1 || return 0
+  [ -d "$V/.git" ] || return 0
+  TRACKED_PYC=$(git -C "$V" ls-files -- '*.pyc' '*/__pycache__/*' 2>/dev/null | sort -u || printf '')
+  [ -n "$TRACKED_PYC" ] || return 0
+  PYC_COUNT=$(printf '%s\n' "$TRACKED_PYC" | grep -c . || printf '0')
+  printf '%s\n' "$TRACKED_PYC" | while IFS= read -r PYC; do
+    [ -n "$PYC" ] || continue
+    git -C "$V" rm --cached -q -- "$PYC" >/dev/null 2>&1 || :
+  done
+  say "izlemeden çıkarıldı (derlenmiş Python, dosyalar diskte duruyor): $PYC_COUNT adet"
+}
+
 record() { printf '%s\n' "$1" >> "$MANIFEST"; }
 
 copy_file() {
@@ -158,6 +179,8 @@ ensure_gitignore() {
 .DS_Store
 .obsidian/workspace*
 .obsidian/cache
+__pycache__/
+*.pyc
 IGN
   say "gitignore: $GI_ADDED satır eklendi"
 }
@@ -318,6 +341,7 @@ if [ "$STAGE" = "apply" ]; then
   step "1/9 .gitignore (anlık görüntüden ÖNCE, sır sahnelenmesin diye)"
   ensure_gitignore
   untrack_ignored_secrets
+  untrack_ignored_pycache
 
   step "2/9 anlık görüntü (doğrulanmış)"
   SNAP_OK=0
