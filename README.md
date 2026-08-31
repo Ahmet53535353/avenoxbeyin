@@ -1,6 +1,6 @@
 # 🧠 avenoxbeyin v2.1: hatırlamayı unutmayan ikinci beyin
 
-[Obsidian](https://obsidian.md) + [Claude Code](https://claude.com/claude-code) veya Codex üstünde çalışan,
+[Obsidian](https://obsidian.md) + [Google Antigravity](https://github.com/avenoxai/avenoxbeyin/blob/main/SETUP-ANTIGRAVITY.md), [Claude Code](https://claude.com/claude-code) veya Codex üstünde çalışan,
 açık kaynak bir **ikinci beyin**. Yerel bir Markdown vault, kalıcı hafıza, sıfır bağımlılık,
 sıfır ekstra ücret. Dosya yönetmezsin, konuşursun.
 
@@ -45,6 +45,18 @@ uygulatabilirsin. Kurulum
 `AGENTS.md`, `.agents/skills` ve mutlak yollu `.codex/hooks.json` üretir. İlk açılışta Codex'in
 `/hooks` ekranından proje kancalarını onaylaman gerekir; güven hash'leri kullanıcı adına
 değiştirilmez. Claude Code ve Codex aynı router, skill ve kanca kodunu okur; iki ayrı kopya yoktur.
+
+### Google Antigravity ile Kurulum
+
+Google Antigravity üzerinde yerel ikinci beyin oluşturmak için:
+
+```bash
+git clone https://github.com/avenoxai/avenoxbeyin.git
+cd avenoxbeyin
+python scripts/install_antigravity.py
+```
+
+Antigravity otomatik olarak `.agents/hooks.json` kancalarını ve `GEMINI.md` direktiflerini tanır. Detaylı rehber: [`SETUP-ANTIGRAVITY.md`](SETUP-ANTIGRAVITY.md).
 
 ### Yerel Windows (WSL değil)
 

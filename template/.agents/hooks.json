@@ -1,0 +1,20 @@
+{
+  "avenoxbeyin-context": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python scripts/pre_invocation.py",
+        "timeout": 15
+      }
+    ]
+  },
+  "avenoxbeyin-flush": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python scripts/stop.py",
+        "timeout": 30
+      }
+    ]
+  }
+}
