@@ -9,3 +9,6 @@ __pycache__/
 .claude/settings.local.json
 .planning/
 .ralph/
+
+# Kök dizindeki harness durumu: asla commit edilmez, setup yeniden üretir
+/.claude/
