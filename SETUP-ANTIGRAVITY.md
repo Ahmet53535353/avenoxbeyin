@@ -49,17 +49,17 @@ Antigravity, proje kökündeki `.agents/` yapılandırmalarını otomatik olarak
 
 ---
 
-## 🔑 İsteğe Bağlı: Gemini API Anahtarı
+## 🤖 Arka Plan Motoru (Özet ve Derleme Öncelik Sırası)
 
-Oturum kapandığında arka planda otomatik özet çıkarma ve bilgi derleme için ortam değişkeni olarak `GEMINI_API_KEY` tanımlayabilirsiniz:
+Antigravity üzerinde çalışan `flush.py` (oturum özeti) ve `compile.py` (bilgi derleyici) motorları otomatik olarak şu hiyerarşiyi izler:
 
-- **Windows (PowerShell):**
-  ```powershell
-  [System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'AIzaSy...', 'User')
-  ```
-- **macOS / Linux (Bash/Zsh):**
-  ```bash
-  export GEMINI_API_KEY="AIzaSy..."
-  ```
+1. **Antigravity CLI (`agy -p`):** Açık olan Antigravity oturumunuz üzerinden arka planda sıfır konfigürasyon ve **sıfır API anahtarı** ile çalışır.
+2. **Gemini API (`GEMINI_API_KEY`):** İsteğe bağlı olarak Google AI Studio API anahtarı tanımlanmışsa kullanılır.
+3. **Claude CLI (`claude -p`):** Sisteminizde Claude CLI yüklüyse kullanılır.
+4. **Sıfır Kayıp Yerel Yedek:** Hiçbir araç bulunamazsa oturum diyaloglarını ham formatta `daily/` dosyasına işler, asla veri kaybetmez.
 
-*(API anahtarı bulunamazsa sistem yüklü olan `claude` CLI varsa onu kullanır veya bildirim üretir).*
+### İsteğe Bağlı API Anahtarı Tanımlama (Opsiyonel)
+
+Eğer harici Gemini API kullanmak isterseniz:
+- **Windows (PowerShell):** `[System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'AIzaSy...', 'User')`
+- **macOS / Linux:** `export GEMINI_API_KEY="AIzaSy..."`
