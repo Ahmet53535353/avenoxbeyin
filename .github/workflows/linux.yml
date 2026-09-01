@@ -1,0 +1,77 @@
+name: linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Hizli ve belirleyici olanlar. Linux portun dogru oldugunu bunlar soyler ve
+  # birkac dakikada sonuc verir.
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Bagimlilik kapisi
+        shell: bash
+        run: |
+          for cmd in python3 bash git; do
+            command -v "$cmd" >/dev/null 2>&1 || { echo "MISSING: $cmd"; exit 1; }
+          done
+          python3 --version
+          bash --version | head -1
+          echo 'bagimliliklar tamam'
+
+      - name: Public beyin.md platform yonlendirmesi
+        shell: bash
+        run: python3 tests/entrypoint_test.py
+
+      - name: Shell parse kontrolu
+        shell: bash
+        run: |
+          bad=0
+          for f in template/.claude/hooks/*.sh scripts/*.sh tests/*.sh; do
+            [ -f "$f" ] || continue
+            if ! bash -n "$f" 2>&1; then
+              echo "PARSE FAIL: $f"
+              bad=$((bad+1))
+            fi
+          done
+          if [ "$bad" -gt 0 ]; then exit 1; fi
+          echo 'shell parse ok'
+
+      - name: Kanca testleri
+        shell: bash
+        run: bash tests/hooks_test.sh
+
+  # Upstream'in motor suite'i ayri job'da kosar; installer veya parse hatasi
+  # motor regresyonunun sonucunu gizlemez.
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Motor testleri
+        shell: bash
+        run: python3 tests/scripts_test.py
+
+      - name: Antigravity entegrasyon testleri
+        shell: bash
+        run: python3 tests/antigravity_test.py
+
+      - name: Yükseltme testleri
+        shell: bash
+        run: |
+          bash tests/upgrade_transaction_test.sh
+          bash tests/upgrade_settings_test.sh
