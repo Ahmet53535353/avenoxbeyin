@@ -60,16 +60,16 @@ test -L AGENTS.md && [ "$(readlink AGENTS.md)" = "CLAUDE.md" ] && echo "router: 
 Düzeltme: `python3 .claude/scripts/render_codex_hooks.py --vault "$PWD" --platform posix`, sonra
 Codex içinde `/hooks` ekranından değişen proje kancalarını onayla. Güven hash'ini elle yazma.
 
-### 4. python3 ve claude CLI yolda mı
+### 4. python3 ve codex CLI yolda mı
 
 ```bash
-if command -v python3 >/dev/null 2>&1; then echo "python3: $(python3 -V 2>&1)"; else echo "python3: YOK"; fi; if command -v claude >/dev/null 2>&1; then echo "claude: var"; else echo "claude: YOK"; fi
+if command -v python3 >/dev/null 2>&1; then echo "python3: $(python3 -V 2>&1)"; else echo "python3: YOK"; fi; if command -v codex >/dev/null 2>&1; then echo "codex: $(codex --version 2>&1 | head -1)"; else echo "codex: YOK"; fi
 ```
 
-🟢 ikisi de var. 🔴 python3 yoksa flush ve derleme hiç çalışmaz, claude yoksa arka plan
-özetleyici sessizce durur.
-Düzeltme: python3 kur (macOS: Xcode command line tools, Linux: dağıtım paketi), claude CLI'yi
-PATH'e ekle.
+🟢 ikisi de var. 🔴 python3 yoksa flush ve derleme hiç çalışmaz, codex yoksa arka plan
+özetleyici ve derleyici sessizce durur.
+Düzeltme: python3 kur (macOS: Xcode command line tools, Linux: dağıtım paketi), codex CLI'yi
+yeniden kur veya PATH'e ekle (https://github.com/openai/codex).
 
 ### 5. python3-missing işareti
 
@@ -108,7 +108,7 @@ if [ -f .claude/scripts/.state/health.json ]; then tail -c 2000 .claude/scripts/
 ```
 
 🟢 kayıt yok veya son kayıt 7 günden eski. 🔴 son 48 saatte hata kaydı var.
-Düzeltme: `component` alanına bak. `flush` ise transkript veya claude CLI, `compile` ise model
+Düzeltme: `component` alanına bak. `flush` ise transkript veya LLM çağrısı sorunu, `compile` ise model
 çağrısı sorunlu. Hatayı okuduktan sonra dosyayı silebilirsin, script yeniden yazar.
 
 ### 9. Bilgi indeksi büyüklüğü
@@ -222,7 +222,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | settings.json bağlantısı | 🟢 | dört olay da bağlı |
 | Codex bağlantıları | 🟢 | router, skill ve kanca store ortak; hooks.json mutlak |
 | Özyineleme koruması | 🟢 | hepsinde var |
-| python3 ve claude | 🟢 | python3 3.11.6, claude var |
+| python3 ve codex | 🟢 | python3 3.11.6, codex 0.152.0 |
 | python3-missing işareti | 🟢 | işaret yok |
 | Günlük log tazeliği | 🟡 | son log 51 saat önce |
 | Derleme durumu | 🔴 | last_status fail:timeout |

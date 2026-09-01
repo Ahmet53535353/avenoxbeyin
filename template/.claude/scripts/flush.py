@@ -321,13 +321,32 @@ def _session_state_path(state_dir: Path, session_id: str) -> Path:
     return state_dir / f"flush-{key}.json"
 
 
-def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
-    claude = shutil.which("claude")
-    if claude is None:
-        return None, "claude-cli-missing"
+def _run_llm(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
+    """Run the summarization prompt through Codex (preferred) or Claude (fallback).
+
+    Codex exec flags used (verified against codex-cli 0.152.0):
+      --ephemeral           : do not persist a session to disk
+      --skip-git-repo-check : temp directory is not a git repo
+      -o <file>             : write the last agent message to a file
+
+    BEYIN_LLM env var overrides the binary name (e.g. BEYIN_LLM=claude).
+    """
+    env_override = os.environ.get("BEYIN_LLM", "").strip()
+    if env_override:
+        codex = shutil.which(env_override)
+        claude = None
+    else:
+        codex = shutil.which("codex")
+        claude = shutil.which("claude") if codex is None else None
+
+    if codex is None and claude is None:
+        return None, "llm-cli-missing"
 
     environment = os.environ.copy()
     environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    # Prevent any nested Codex/Claude hook from triggering recursion.
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
     try:
         with tempfile.TemporaryDirectory(prefix="beyin-flush-") as temporary:
             temporary_path = Path(temporary).resolve()
@@ -340,36 +359,74 @@ def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
                 inside_vault = False
             if inside_vault:
                 return None, "temporary-directory-inside-vault"
-            result = subprocess.run(
-                [
+
+            output_file = temporary_path / "llm-out.txt"
+
+            if codex is not None:
+                # Codex exec: --ephemeral avoids persisting a session;
+                # '-' tells codex to read the prompt from stdin;
+                # -o writes the final agent message to a file for clean capture.
+                # Using stdin avoids OS argument-list size limits on long prompts.
+                argv = [
+                    codex,
+                    "exec",
+                    "--ephemeral",
+                    "--skip-git-repo-check",
+                    "-o",
+                    str(output_file),
+                    "-",
+                ]
+                stdin_text = prompt
+                timeout = 300
+                error_prefix = "codex"
+            else:
+                # Claude CLI fallback for backward compatibility.
+                argv = [
                     claude,
                     "-p",
-                    "--model",
-                    "haiku",
                     "--output-format",
                     "text",
                     "--safe-mode",
                     "--tools",
                     "",
-                ],
-                input=prompt,
+                ]
+                stdin_text = prompt
+                timeout = 240
+                error_prefix = "claude"
+
+            result = subprocess.run(
+                argv,
+                input=stdin_text,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
                 cwd=temporary_path,
                 env=environment,
-                timeout=240,
+                timeout=timeout,
                 check=False,
             )
     except subprocess.TimeoutExpired:
-        return None, "claude-timeout"
+        return None, f"{error_prefix}-timeout"
     except OSError:
-        return None, "claude-exec-error"
+        return None, f"{error_prefix}-exec-error"
 
     if result.returncode != 0:
-        return None, f"claude-exit-{result.returncode}"
-    return result.stdout.strip(), None
+        return None, f"{error_prefix}-exit-{result.returncode}"
+
+    if codex is not None:
+        # Read output from the -o file; fall back to stdout if the file is
+        # absent (older Codex builds or dry-run without -o support).
+        if output_file.exists():
+            text = output_file.read_text(encoding="utf-8", errors="replace").strip()
+        else:
+            text = result.stdout.strip()
+    else:
+        text = result.stdout.strip()
+
+    if not text:
+        return None, f"{error_prefix}-empty-output"
+    return text, None
 
 
 def _append_daily(
@@ -609,7 +666,7 @@ def _flush_once(args: argparse.Namespace, event_time: dt.datetime) -> int:
                 warning=True,
             )
 
-        summary, error = _run_claude(build_flush_prompt(transcript), VAULT_ROOT)
+        summary, error = _run_llm(build_flush_prompt(transcript), VAULT_ROOT)
         if error is not None:
             _record_flush_failure(
                 STATE_DIR,

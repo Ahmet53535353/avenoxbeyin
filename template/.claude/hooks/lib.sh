@@ -1,10 +1,17 @@
 #!/bin/bash
 [ -n "${BEYIN_INVOKED_BY:-}" ] && exit 0
+
 # Shared, portable helpers for all beyin hooks.
+# Works with both Codex (codex-cli 0.152.0+) and Claude Code.
+# Codex does not set a documented project-dir env var; hooks run with the
+# session's cwd already set to the vault, but we derive the project root from
+# the hook script's own location for reliability.
 
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  # Claude Code sets CLAUDE_PROJECT_DIR; keep for backward compatibility.
   BEYIN_PROJECT_DIR=$CLAUDE_PROJECT_DIR
 else
+  # Codex: resolve from the hook file's own path (two levels up from hooks/).
   BEYIN_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
   BEYIN_PROJECT_DIR=$(CDPATH= cd "$BEYIN_HOOK_DIR/../.." 2>/dev/null && pwd)
 fi

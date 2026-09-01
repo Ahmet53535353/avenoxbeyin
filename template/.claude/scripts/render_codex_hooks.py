@@ -109,8 +109,8 @@ def render(vault: Path, platform: str) -> dict[str, Any]:
         )
 
     current.setdefault("description", (
-        "Avenox Beyin project hooks for Codex. Commands use absolute paths "
-        "because Codex sets neither CODEX_PROJECT_DIR nor CLAUDE_PROJECT_DIR."
+        "Beyin project hooks for Codex. Commands use absolute paths "
+        "because Codex does not set a documented project-dir env var in hooks."
     ))
     return current
 

@@ -1,4 +1,4 @@
-# SETUP.md v2.1: Activate this second brain (Claude Code or Codex runbook)
+# SETUP.md v2.1: Activate this second brain (Codex-native runbook)
 
 > You are Claude Code or Codex, run from inside a freshly cloned `avenoxbeyin` repo. The user wants their
 > own AI second brain, or wants to upgrade the one they already have. The scaffold lives in
@@ -171,10 +171,10 @@ else
   echo "🔴 python3 YOK"
   BEYIN_MISSING=$((BEYIN_MISSING + 1))
 fi
-if command -v claude >/dev/null 2>&1; then
-  echo "claude CLI ✓ $(command -v claude)"
+if command -v codex >/dev/null 2>&1; then
+  echo "codex CLI ✓ $(codex --version 2>&1 | head -1)"
 else
-  echo "🔴 claude CLI YOK"
+  echo "🔴 codex CLI YOK"
   BEYIN_MISSING=$((BEYIN_MISSING + 1))
 fi
 echo "ONKOSUL SONUC: $BEYIN_MISSING eksik"
@@ -185,6 +185,8 @@ summarizer and the compiler run on, and it is the entire v2 thesis. If it is mis
 
 - macOS: `xcode-select --install`, then run the block again.
 - Linux: install `python3` with your package manager, then run the block again.
+
+`codex` CLI must be installed and authenticated. Install: https://github.com/openai/codex
 
 Do not carry on quietly. If the user insists on continuing without python3, say in Turkish that
 this is a **degraded kurulum**: continuity works, the automatic daily log and the knowledge
@@ -358,7 +360,7 @@ the folder in Obsidian by hand always works.
 ## PHASE 7: First doctor run
 
 ```bash
-cd "{{VAULT_PATH}}" && claude "beyin doktor"
+cd "{{VAULT_PATH}}" && codex "beyin doktor"
 ```
 
 The `beyin-doktor` skill prints one health table. Close every 🔴 row before you report success.
@@ -531,7 +533,7 @@ grep -rl "{{" "/kullanicinin/mutlak/vault/yolu/knowledge" \
 ## PHASE U5: Doctor
 
 ```bash
-cd "/kullanicinin/mutlak/vault/yolu" && claude "beyin doktor"
+cd "/kullanicinin/mutlak/vault/yolu" && codex "beyin doktor"
 ```
 
 Close every 🔴 row before you go on. The version has not been stamped yet, so the doctor is
@@ -591,7 +593,7 @@ Report in Turkish:
   ortağın adı, masaüstü kısayolu. Yükseltme modunda: hangi dosyalara dokunulmadığını da say, eski
   hafıza klasörü adının neden değiştiğini de tek cümleyle tekrarla.
 - ▶️ **İlk çalıştırma:** Obsidian'ı aç → vault olarak `{{VAULT_PATH}}` seç (bir kez tanıtır,
-  masaüstündeki 🧠 ikonu bundan sonra tek tıkla açar). Sonra o klasörde `claude` çalıştır.
+  masaüstündeki 🧠 ikonu bundan sonra tek tıkla açar). Sonra o klasörde `codex` çalıştır.
 
 ## Sihri göster, ama önce doğrula
 
@@ -603,7 +605,7 @@ Tell them, in Turkish, exactly this shape of thing:
 
 > "Şimdi benimle bir şey konuş, sonra `/exit` yaz. Arka planda küçük bir özetleyici çalışacak,
 > genelde birkaç saniye sürer. Ben günlük logun diske düştüğünü görene kadar bekleyeceğim, sonra
-> `claude`'u tekrar açacağız."
+> `codex`'i tekrar açacağız."
 
 After they type `/exit`, run this bounded poll from the repo and wait for it. Do not skip it, and
 do not tell the user "oldu" before it prints its success line:
@@ -630,7 +632,7 @@ fi
 
 Wait for one of the two final lines. There is no third outcome, and neither of them is silent.
 
-- `GUNLUK LOG HAZIR` → show the tail to the user, that is the actual demo. Now relaunch `claude`.
+- `GUNLUK LOG HAZIR` → show the tail to the user, that is the actual demo. Now relaunch `codex`.
 - `GUNLUK LOG 120 SANIYEDE YAZILMADI` → do not relaunch yet. Run `beyin doktor` in the vault and
   read the result. Two boring causes cover almost every case: the conversation was too short to be
   worth summarizing (the summarizer answers `FLUSH_BOS` and writes nothing, which is correct
@@ -638,10 +640,10 @@ Wait for one of the two final lines. There is no third outcome, and neither of t
 
 ## Honest timing, say it in Turkish
 
-- **Günlük log:** oturum kapanışında, arka planda, küçük bir Haiku çağrısı. Saniyeler.
+- **Günlük log:** oturum kapanışında, arka planda, kısa bir LLM çağrısı. Saniyeler.
 - **Bilgi derlemesi:** aynı akşam değil, saat 18'den sonraki ilk oturum kapanışında, günde bir kez,
-  ve bir Sonnet çağrısı olduğu için **dakikalar** sürebilir. `knowledge/` klasörünün o an boş
-  olması normal. Ertesi sabah `claude` açtığında indeks kendiliğinden bağlama girer.
+  ve bir LLM çağrısı olduğu için **dakikalar** sürebilir. `knowledge/` klasörünün o an boş
+  olması normal. Ertesi sabah `codex` açtığında indeks kendiliğinden bağlama girer.
 
 Never promise the knowledge articles in the same minute. Promise the daily log, show the daily
 log, and be precise about when the rest arrives.
@@ -649,9 +651,8 @@ log, and be precise about when the rest arrives.
 ## Kapanış
 
 - 🩺 **Bir şey ters giderse:** `beyin doktor` yaz. Tek tabloda her parçanın durumunu verir.
-- 💸 **Maliyet:** Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Claude aboneliğinin
-  günlük limitinden küçük bir pay kullanır (özet: her oturum sonunda küçük bir Haiku çağrısı;
-  derleme: günde bir Sonnet çağrısı).
+- 💸 **Maliyet:** Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Codex/ChatGPT
+  aboneliğinin günlük limitinden küçük bir pay kullanır.
 - 🔗 **Sen de kurdun mu?** Bir arkadaşına gönder: `avenox.lol/beyin.md`
 
 Do not end the session by saying "kuruldu" alone. Show the pipeline once, with the user watching.
