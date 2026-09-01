@@ -50,6 +50,12 @@ jobs:
         shell: bash
         run: bash tests/hooks_test.sh
 
+      - name: Temiz kurulum (uctan uca)
+        shell: bash
+        env:
+          BEYIN_TEST_TIMEOUT_SCALE: '6'
+        run: bash tests/Test-CleanInstall.sh
+
   # Upstream'in motor suite'i ayri job'da kosar; installer veya parse hatasi
   # motor regresyonunun sonucunu gizlemez.
   engine:
