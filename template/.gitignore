@@ -12,6 +12,8 @@
 .claude/hooks/.state/
 .claude/scripts/.state/*
 !.claude/scripts/.state/.gitkeep
+.agents/scripts/.state/*
+!.agents/scripts/.state/.gitkeep
 
 # OS / editor noise
 .DS_Store
