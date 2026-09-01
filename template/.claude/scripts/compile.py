@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.dont_write_bytecode = True
 import _portalock
@@ -549,20 +550,60 @@ def _promote_changes(
         _atomic_copy(source, destination)
 
 
-def _run_claude(prompt: str, stage: Path) -> str | None:
-    claude = shutil.which("claude")
-    if claude is None:
-        return "claude-cli-missing"
+def _run_llm(prompt: str, stage: Path) -> str | None:
+    """Run the compile prompt through Codex (preferred) or Claude (fallback).
+
+    Codex exec flags used (verified against codex-cli 0.152.0):
+      --sandbox workspace-write : allow the agent to write files in the CWD
+      --skip-git-repo-check     : staging tempdir is not a git repository
+      -o <file>                 : write the last agent message to a file
+
+    The staging directory is passed as CWD (-C / cwd=stage); the manifest
+    validation and atomic promotion layers run unchanged after this call.
+
+    BEYIN_LLM env var overrides the binary name (e.g. BEYIN_LLM=claude).
+    """
+    env_override = os.environ.get("BEYIN_LLM", "").strip()
+    if env_override:
+        codex = shutil.which(env_override)
+        claude = None
+    else:
+        codex = shutil.which("codex")
+        claude = shutil.which("claude") if codex is None else None
+
+    if codex is None and claude is None:
+        return "llm-cli-missing"
 
     environment = os.environ.copy()
     environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    output_file = stage.parent / f".beyin-compile-out-{uuid.uuid4().hex}.txt"
+
     try:
-        result = subprocess.run(
-            [
+        if codex is not None:
+            # --sandbox workspace-write: the agent needs to create/edit
+            # knowledge/*.md files inside the staging directory.
+            # '-' tells codex to read the prompt from stdin;
+            # using stdin avoids OS argument-list size limits on long prompts.
+            argv = [
+                codex,
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--skip-git-repo-check",
+                "-o",
+                str(output_file),
+                "-",
+            ]
+            stdin_text = prompt
+            timeout = 900
+            error_prefix = "codex"
+        else:
+            # Claude CLI fallback for backward compatibility.
+            argv = [
                 claude,
                 "-p",
-                "--model",
-                "sonnet",
                 "--output-format",
                 "text",
                 "--safe-mode",
@@ -572,23 +613,35 @@ def _run_claude(prompt: str, stage: Path) -> str | None:
                 "acceptEdits",
                 "--allowedTools",
                 "Read,Write,Edit,Glob,Grep",
-            ],
-            input=prompt,
+            ]
+            stdin_text = prompt
+            timeout = 900
+            error_prefix = "claude"
+
+        result = subprocess.run(
+            argv,
+            input=stdin_text,
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
             cwd=stage,
             env=environment,
-            timeout=900,
+            timeout=timeout,
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return "claude-timeout"
+        return f"{error_prefix}-timeout"
     except OSError:
-        return "claude-exec-error"
+        return f"{error_prefix}-exec-error"
+    finally:
+        try:
+            output_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     if result.returncode != 0:
-        return f"claude-exit-{result.returncode}"
+        return f"{error_prefix}-exit-{result.returncode}"
     return None
 
 
@@ -628,7 +681,7 @@ def _compile_one(
             daily_body,
             timestamp,
         )
-        error = _run_claude(prompt, stage)
+        error = _run_llm(prompt, stage)
         if error is not None:
             return error, error
         if _sha256(daily_path) != expected_digest:

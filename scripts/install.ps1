@@ -120,13 +120,16 @@ function Invoke-BeyinPreflight {
         [void]$missing.Add("Git bulunamadi`n  winget install --id Git.Git --source winget")
     }
 
+    $codex = Get-Command codex -ErrorAction SilentlyContinue
     $claude = Get-Command claude -ErrorAction SilentlyContinue
-    $claudeOk = $false
-    if ($claude -and $claude.Source) {
-        $claudeOk = Test-BeyinDependency -Path $claude.Source -Arguments @('--version') -ExpectPattern '\(Claude Code\)'
+    $cliOk = $false
+    if ($codex -and $codex.Source) {
+        $cliOk = Test-BeyinDependency -Path $codex.Source -Arguments @('--version') -ExpectPattern 'codex'
+    } elseif ($claude -and $claude.Source) {
+        $cliOk = Test-BeyinDependency -Path $claude.Source -Arguments @('--version') -ExpectPattern '\(Claude Code\)'
     }
-    if (-not $claudeOk) {
-        [void]$missing.Add("Claude Code bulunamadi`n  https://claude.com/claude-code")
+    if (-not $cliOk) {
+        [void]$missing.Add("Codex CLI (veya Claude Code) bulunamadi`n  https://github.com/openai/codex")
     }
 
     $result.Missing = $missing.ToArray()

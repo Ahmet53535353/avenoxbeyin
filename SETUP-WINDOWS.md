@@ -25,7 +25,7 @@
    kontrol ediyorum...", "Vault iskeletini kuruyorum...", "Kancaları
    bağlıyorum...". Short sentences, no walls of text.
 6. **Everything is free.** No API key anywhere. The summarizer and the compiler
-   run on the user's existing Claude subscription through `claude -p`.
+   run on the user's existing Codex / Claude setup through `codex exec`.
 
 ## PHASE 0: Dependency gate
 

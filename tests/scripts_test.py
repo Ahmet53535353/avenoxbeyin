@@ -75,25 +75,43 @@ class ScriptsTest(unittest.TestCase):
         )
         (self.knowledge / "concepts").mkdir()
         (self.knowledge / "connections").mkdir()
-        self.stub_log = self.root / "claude-calls.jsonl"
-        self._write_claude_stub()
+        self.stub_log = self.root / "llm-calls.jsonl"
+        self._write_llm_stub()
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _write_claude_stub(self) -> None:
-        stub = self.bin_dir / "claude"
-        stub.write_text(
-            """#!/usr/bin/env python3
+    def _write_llm_stub(self) -> None:
+        """Write a stub that pretends to be either 'claude' or 'codex'.
+
+        The stub is placed at bin_dir/claude and bin_dir/codex so that
+        _run_llm() finds it via BEYIN_LLM=claude (set in _environment).
+        Both invocation styles (Claude stdin-based and Codex positional-prompt)
+        are handled transparently.
+        """
+        stub_body = """#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
 import sys
 import time
 
-prompt = sys.stdin.read()
 arguments = sys.argv[1:]
-is_compile = "sonnet" in arguments
+# Codex path: '-' signals that the prompt comes from stdin (codex exec -o file -).
+# Both Claude and Codex paths now pass the prompt via stdin.
+is_codex_call = "exec" in arguments
+# Always read stdin (both paths send prompt through stdin).
+prompt = sys.stdin.read()
+# Determine output file from -o flag (Codex path only).
+output_file = None
+for i, arg in enumerate(arguments):
+    if arg in ("-o", "--output-last-message") and i + 1 < len(arguments):
+        output_file = Path(arguments[i + 1])
+        break
+
+# is_compile: compile prompts use --sandbox (Codex path) or contain sonnet (Claude path).
+is_compile = "--sandbox" in arguments or "sonnet" in arguments
+
 log_path = os.environ.get("BEYIN_TEST_LOG")
 if log_path:
     with Path(log_path).open("a", encoding="utf-8") as log:
@@ -108,9 +126,11 @@ delay = float(os.environ.get("BEYIN_TEST_SLEEP", "0"))
 if delay:
     time.sleep(delay)
 
+exit_code = int(os.environ.get("BEYIN_TEST_EXIT", "0"))
+
 if is_compile:
     action = os.environ.get("BEYIN_TEST_COMPILE_ACTION", "append_log")
-    if action == "append_log":
+    if action == "append_log" and not exit_code:
         with Path("knowledge/log.md").open("a", encoding="utf-8") as target:
             target.write("\\nmodel change\\n")
     elif action == "forbidden":
@@ -128,14 +148,18 @@ if is_compile:
         target.symlink_to("../../daily/input.md")
 else:
     output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
-    if output:
-        print(output)
+    text = output if output else ""
+    if output_file is not None and text:
+        output_file.write_text(text, encoding="utf-8")
+    elif text:
+        print(text)
 
-raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
-""",
-            encoding="utf-8",
-        )
-        stub.chmod(0o755)
+raise SystemExit(exit_code)
+"""
+        for name in ("claude", "codex"):
+            stub = self.bin_dir / name
+            stub.write_text(stub_body, encoding="utf-8")
+            stub.chmod(0o755)
 
     def _environment(self, **overrides: str) -> dict[str, str]:
         environment = os.environ.copy()
@@ -143,6 +167,9 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         environment["PATH"] = f"{self.bin_dir}{os.pathsep}{environment['PATH']}"
         environment["BEYIN_TEST_LOG"] = str(self.stub_log)
         environment["BEYIN_FAKE_HOUR"] = "0"
+        # Force _run_llm() to use the claude stub in tests; this keeps test
+        # isolation independent of whether a real codex binary exists on PATH.
+        environment["BEYIN_LLM"] = "claude"
         environment.update(overrides)
         return environment
 
@@ -234,6 +261,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         ]
         if model is None:
             return calls
+        if model == "haiku":
+            return [call for call in calls if "haiku" in call["argv"] or "--ephemeral" in call["argv"]]
+        if model == "sonnet":
+            return [call for call in calls if "sonnet" in call["argv"] or "--sandbox" in call["argv"]]
         return [call for call in calls if model in call["argv"]]
 
     def _payload_snapshot(self) -> dict[str, bytes]:
@@ -285,6 +316,9 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
             {"type": "event_msg", "payload": {"type": "agent_message", "message": "Codex yanıtı"}},
             {"type": "event_msg", "payload": {"type": "task_started", "message": "yoksay"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "gizli talimat"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Yeni Codex kullanıcı mesajı"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Yeni Codex yanıtı"}]}},
         ]
         transcript.write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
@@ -295,6 +329,8 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             [
                 ("user", "Codex kullanıcı mesajı"),
                 ("assistant", "Codex yanıtı"),
+                ("user", "Yeni Codex kullanıcı mesajı"),
+                ("assistant", "Yeni Codex yanıtı"),
             ],
         )
 
@@ -379,18 +415,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         calls = self._stub_calls("haiku")
         self.assertEqual(len(calls), 1)
         self.assertEqual(
-            calls[0]["argv"],
-            [
-                "-p",
-                "--model",
-                "haiku",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "",
-            ],
+            calls[0]["argv"][:3],
+            ["exec", "--ephemeral", "--skip-git-repo-check"],
         )
+        self.assertEqual(calls[0]["argv"][3], "-o")
+        self.assertEqual(calls[0]["argv"][5], "-")
         self.assertEqual(calls[0]["guard"], "beyin-scripts")
         self.assertNotEqual(Path(str(calls[0]["cwd"])), self.vault)
         self.assertIn("BEGIN UNTRUSTED TRANSCRIPT DATA", calls[0]["prompt"])
@@ -831,22 +860,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(state["ingested"][daily_path.name], expected)
         call = self._stub_calls("sonnet")[0]
         self.assertEqual(
-            call["argv"],
-            [
-                "-p",
-                "--model",
-                "sonnet",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "Read,Write,Edit,Glob,Grep",
-                "--permission-mode",
-                "acceptEdits",
-                "--allowedTools",
-                "Read,Write,Edit,Glob,Grep",
-            ],
+            call["argv"][:4],
+            ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check"],
         )
+        self.assertEqual(call["argv"][4], "-o")
+        self.assertEqual(call["argv"][6], "-")
         call_cwd = Path(str(call["cwd"]))
         # The stage must live outside the vault entirely (and thus outside
         # .claude/), not under state_dir: Claude CLI auto-protects any path
@@ -872,7 +890,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             (self.state / "compile-state.json").read_text(encoding="utf-8")
         )
         self.assertEqual(state["ingested"], {})
-        self.assertEqual(state["last_status"], "fail:claude-exit-7")
+        self.assertEqual(state["last_status"], "fail:codex-exit-7")
         health = json.loads(
             (self.state / "health.json").read_text(encoding="utf-8")
         )

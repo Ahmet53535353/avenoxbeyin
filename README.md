@@ -19,41 +19,34 @@ Code'un kendisi yapar.
 
 ## Hızlı başlangıç
 
-Terminalde `claude` çalıştır ve şunu yapıştır:
-
-```
-Read https://avenox.lol/beyin.md and follow it exactly to build my second brain.
-```
-
 Bu tek satırlık giriş önce platformu ayırır: macOS/Linux mevcut `SETUP.md` yolunda kalır, yerel
 Windows `SETUP-WINDOWS.md` + PowerShell kurucusuna geçer, WSL ise tamamen aynı Linux dağıtımı
-içinde kalan POSIX yolunu kullanır. Böylece Windows'ta Bash/macOS komutları çalıştırılmaz.
+içinde kalan POSIX yolunu kullanır.
 
-Ya da macOS, Linux veya WSL'de repoyu doğrudan klonla, üç komut:
+macOS, Linux veya WSL'de repoyu doğrudan klonla:
 
 ```bash
 git clone https://github.com/avenoxai/avenoxbeyin.git
 cd avenoxbeyin
-claude "Read SETUP.md and follow it exactly to set up my second brain from this template."
+codex "Read SETUP.md and follow it exactly to set up my second brain from this template."
 ```
 
-Claude birkaç soru sorar (adın, ne iş yaptığın, AI ortağının adı), vault'u kurar, kancaları bağlar,
-masaüstüne 🧠 ikonlu bir kısayol koyar.
+Codex birkaç soru sorar (adın, ne iş yaptığın, AI ortağının adı), vault'u kurar, kancaları bağlar,
+masaüstüne 🧠 ikonlu bir kısayol koyar. Kurulum `AGENTS.md`, `.agents/skills` ve mutlak yollu
+`.codex/hooks.json` üretir. İlk açılışta Codex'in `/hooks` ekranından proje kancalarını onaylaman
+gerekir.
 
-Codex kullanıyorsan bu POSIX yolda aynı repoda `codex` açıp `SETUP.md` dosyasını
-uygulatabilirsin. Kurulum
-`AGENTS.md`, `.agents/skills` ve mutlak yollu `.codex/hooks.json` üretir. İlk açılışta Codex'in
-`/hooks` ekranından proje kancalarını onaylaman gerekir; güven hash'leri kullanıcı adına
-değiştirilmez. Claude Code ve Codex aynı router, skill ve kanca kodunu okur; iki ayrı kopya yoktur.
+Claude Code kullanıyorsan aynı repoda `claude "Read SETUP.md..."` ile kurulum yapabilirsin; her iki
+araç da aynı kanca ve hafıza motorunu paylaşır.
 
 ### Yerel Windows (WSL değil)
 
-Yerel Windows için ayrı bir kurulum yolu vardır:
+On native Windows, yerel Windows için ayrı bir kurulum yolu vardır:
 
 ```powershell
 git clone https://github.com/avenoxai/avenoxbeyin.git
 cd avenoxbeyin
-claude "Read SETUP-WINDOWS.md and follow it exactly to set up my second brain."
+codex "Read SETUP-WINDOWS.md and follow it exactly to set up my second brain."
 ```
 
 Gereksinimler kurulumdan önce **çalıştırılarak** denetlenir (PowerShell 7,
@@ -115,14 +108,14 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
         |                                    |
         +------------------+-----------------+
                            v
-                       flush.py           (claude -p --model haiku)
+                       flush.py           (codex exec --ephemeral)
                   transkripti okur, Türkçe özet çıkarır
                            v
                  daily/YYYY-MM-DD.md      <-- makine yazar, sen değil
                            |
         (saat 18'den sonra, günde bir kez, değişen log varsa)
                            v
-                      compile.py          (claude -p --model sonnet)
+                      compile.py          (codex exec --sandbox workspace-write)
                            v
    knowledge/concepts/*.md + knowledge/connections/*.md + knowledge/index.md
                            |
@@ -162,13 +155,12 @@ dosyalarını kendi eliyle günceller. Makine katmanı onun yerine geçmez, alt�
 
 ## Maliyet, dürüst hâliyle
 
-Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Claude aboneliğinin günlük limitinden
-küçük bir pay kullanır (özet: her oturum sonunda küçük bir Haiku çağrısı; derleme: günde bir
-Sonnet çağrısı).
+Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Codex/Claude kullanımınızdan
+küçük bir pay kullanır.
 
 ## Gereksinimler
 
-Zorunlu, her platformda: [Claude Code](https://claude.com/claude-code),
+Zorunlu, her platformda: [Codex CLI](https://github.com/openai/codex) (veya [Claude Code](https://claude.com/claude-code)),
 [Obsidian](https://obsidian.md) ve Python 3 (macOS/Linux'ta `python3`; yerel Windows'ta çalışan
 `python` veya `python3`). Python opsiyonel değil: günlük log da gece derlemesi de onun üstünde
 çalışır.
@@ -177,7 +169,7 @@ Zorunlu, her platformda: [Claude Code](https://claude.com/claude-code),
 | --- | --- | --- |
 | macOS | **test edildi** | hepsi: kancalar, `daily/`, `knowledge/`, 🧠 masaüstü kısayolu |
 | Linux | **test edilmedi** | kurulum `uname` ile dallanır: Homebrew, Obsidian cask ve macOS `.app` adımları atlanır, yerine XDG `.desktop` kısayolu yazılır. Vault, kancalar ve scriptler taşınabilir yazıldı ama gerçek bir Linux masaüstünde doğrulanmadı. Denersen sorun aç. |
-| Windows | WSL, **veya** yerel Windows | Tek satırlık `beyin.md` girişi iki yolu ayırır. Yerel Windows için [`SETUP-WINDOWS.md`](SETUP-WINDOWS.md). WSL'de motor ve vault aynı Linux dağıtımında, Linux dosya sisteminde kalır; Windows Obsidian ile karma çalışma doğrulanmış sayılmaz. Bkz. [`docs/WINDOWS-PORT.md`](docs/WINDOWS-PORT.md). |
+| Windows | WSL, **veya** yerel Windows | Yerel Windows için [`SETUP-WINDOWS.md`](SETUP-WINDOWS.md). WSL'de motor ve vault aynı Linux dağıtımında, Linux dosya sisteminde kalır; Windows Obsidian ile karma çalışma doğrulanmış sayılmaz. Bkz. [`docs/WINDOWS-PORT.md`](docs/WINDOWS-PORT.md). |
 
 Masaüstü kısayolu macOS'ta `osacompile` ve AppKit kullanır, ikisi de Linux'ta yoktur. Vault'un
 kendisi düz Markdown, yani her yerde açılır; kurulum akışının tamamı için doğrulanmış tek platform
@@ -185,7 +177,7 @@ kendisi düz Markdown, yani her yerde açılır; kurulum akışının tamamı i�
 
 ## Bir şey ters giderse
 
-Vault klasöründe `claude` açıp `beyin doktor` yaz. Kancalar, scriptler, python3, `claude` CLI,
+Vault klasöründe `codex` açıp `beyin doktor` yaz. Kancalar, scriptler, python3, `codex` CLI,
 günlük log tazeliği, son derleme durumu, iCloud çakışma dosyaları ve git durumu tek tabloda gelir,
 her kırmızı satırın altında düzeltme komutu yazar.
 
@@ -207,34 +199,22 @@ MIT, [LICENSE](LICENSE) dosyasına bak. PR'lar açık.
 
 ## In English (short version)
 
-**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code or
-Codex, with
-memory that survives across sessions. v1 gave you continuity but depended on the model remembering
+**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Codex or Claude Code,
+with memory that survives across sessions. v1 gave you continuity but depended on the model remembering
 to write its memory files. v2's thesis is that **memory must be a mechanism, not a discipline**: a
 `SessionEnd` and a `PreCompact` hook flush every conversation into `daily/` logs automatically via
-a small background Haiku call, and once a day a Sonnet compile pass turns those logs into linked
+a background Codex call, and once a day a compile pass turns those logs into linked
 articles under `knowledge/`. The next session starts with that knowledge index already in context.
 
 On macOS, Linux, or WSL, install with `git clone https://github.com/avenoxai/avenoxbeyin.git && cd
-avenoxbeyin && claude "Read SETUP.md and follow it exactly to set up my second brain from this
-template."` Codex can follow the same `SETUP.md`; its project hooks are rendered with absolute
-paths and require one-time approval in `/hooks`. On native Windows, use the same clone but ask
-Claude Code to read `SETUP-WINDOWS.md`; do not run the Bash installer. Already running v1 or v2.0?
+avenoxbeyin && codex "Read SETUP.md and follow it exactly to set up my second brain from this
+template."` Codex project hooks are rendered with absolute paths and require one-time approval in `/hooks`.
+On native Windows, use the same clone with `SETUP-WINDOWS.md`. Already running v1 or v2.0?
 The same command detects it and hands the work to one committed script, `scripts/upgrade.sh`:
 additive only, your memory files are never touched, the settings merge is idempotent, and it takes
-a **verified** git snapshot before it changes anything. Two things it will ask you about, and stop
-for if you say no: renaming the memory folder to the fixed `🔮 850-Companion` path (a `git mv`, the
-contents never move), and removing v1 hook wiring left behind in `settings.local.json` so hooks
-stop firing twice. The `.beyin-version` stamp is the last write of all, only after every gate
-passes.
+a **verified** git snapshot before it changes anything.
 
-Platform honesty: macOS is the tested POSIX path. The installer branches on `uname` and writes an
-XDG `.desktop` launcher instead of a macOS app on Linux, but that path has not been verified on a
-real Linux desktop. Native Windows has its own PowerShell installer and CI suite; the generated
-Codex wiring is regression-tested, but a live native-Windows Codex session has not yet been
-claimed as verified.
-
-No extra cost: everything runs on your existing Claude subscription through `claude -p`. No API
-keys, no paid services, bash and python3 stdlib only. Knowledge-compilation architecture credit:
+No extra cost: everything runs on your existing Codex or Claude setup. No API keys, no paid services,
+bash and python3 stdlib only. Knowledge-compilation architecture credit:
 Andrej Karpathy's LLM knowledge base pattern,
 https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f. MIT licensed.
