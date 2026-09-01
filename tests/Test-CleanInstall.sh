@@ -16,7 +16,10 @@ set -euo pipefail
 # for the wrong reason.
 unset GIT_CONFIG_GLOBAL XDG_CONFIG_HOME
 export GIT_CONFIG_NOSYSTEM=1
-export HOME=/dev/null
+# HOME=/dev/null'u EXPORT ETME — sadece subprocess'lere gitsin ama kalici ortam
+# degistirmesin. Asiri korumali git isolation icin gerekli oldugunda kullanilir.
+# Bu sayede sonraki test scriptlerinin HOME'u etkilenmez.
+:
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
