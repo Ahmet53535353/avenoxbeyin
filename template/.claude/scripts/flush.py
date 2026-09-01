@@ -116,9 +116,10 @@ def load_hook_input(path: Path) -> dict[str, Any]:
 
 
 def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
-    # Codex rollout format: ~/.codex/sessions/**/rollout-*.jsonl.  The
-    # user-facing turns are event_msg records; response/tool records are
-    # intentionally ignored so a hook does not duplicate or ingest internals.
+    # Codex rollout format: ~/.codex/sessions/**/rollout-*.jsonl.  Older
+    # releases used event_msg records; current releases store user-facing
+    # messages as response_item payloads. Reasoning and tool records remain
+    # intentionally ignored so a hook does not ingest internals.
     if record.get("type") == "event_msg":
         payload = record.get("payload")
         if not isinstance(payload, dict):
@@ -129,6 +130,15 @@ def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
         if payload_type == "agent_message":
             return "assistant", payload.get("message")
         return None, None
+
+    if record.get("type") == "response_item":
+        payload = record.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "message":
+            return None, None
+        role = payload.get("role")
+        if role not in {"user", "assistant"}:
+            return None, None
+        return role, payload.get("content")
 
     message = record.get("message")
     if isinstance(message, dict):
@@ -149,7 +159,11 @@ def _text_from_content(content: Any) -> str:
 
     text_parts = []
     for block in content:
-        if not isinstance(block, dict) or block.get("type") != "text":
+        if not isinstance(block, dict) or block.get("type") not in {
+            "text",
+            "input_text",
+            "output_text",
+        }:
             continue
         text = block.get("text")
         if isinstance(text, str):

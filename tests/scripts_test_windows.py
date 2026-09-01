@@ -363,6 +363,26 @@ raise SystemExit(exit_code)
         self.assertTrue(capped.startswith("**"))
         self.assertRegex(capped, r"^\*\*(User|Assistant):\*\* id\d+:")
 
+    def test_current_codex_rollout_transcript_extraction(self) -> None:
+        transcript = self.root / "rollout.jsonl"
+        records = [
+            {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "gizli talimat"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Codex kullanıcı mesajı"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Codex yanıtı"}]}},
+        ]
+        transcript.write_text(
+            "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            FLUSH.read_transcript(transcript),
+            [
+                ("user", "Codex kullanıcı mesajı"),
+                ("assistant", "Codex yanıtı"),
+            ],
+        )
+
     def test_flush_bos_appends_nothing_and_records_success(self) -> None:
         transcript = self._write_transcript([("user", "yalnızca selam")])
         hook = self._write_hook("bos-session", transcript)

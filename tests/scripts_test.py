@@ -316,6 +316,9 @@ raise SystemExit(exit_code)
             {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
             {"type": "event_msg", "payload": {"type": "agent_message", "message": "Codex yanıtı"}},
             {"type": "event_msg", "payload": {"type": "task_started", "message": "yoksay"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "gizli talimat"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Yeni Codex kullanıcı mesajı"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Yeni Codex yanıtı"}]}},
         ]
         transcript.write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
@@ -326,6 +329,8 @@ raise SystemExit(exit_code)
             [
                 ("user", "Codex kullanıcı mesajı"),
                 ("assistant", "Codex yanıtı"),
+                ("user", "Yeni Codex kullanıcı mesajı"),
+                ("assistant", "Yeni Codex yanıtı"),
             ],
         )
 
