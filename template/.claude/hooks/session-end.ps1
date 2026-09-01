@@ -80,6 +80,77 @@ if ($result -ne 'baslatildi') {
     }
 }
 
+# Git sync - hourly backup to private repo (background, non-blocking)
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $gitSyncScript = @'
+    param($VaultRoot)
+    $stateDir = Join-Path $VaultRoot '.claude\scripts\.state'
+    $lastPushFile = Join-Path $stateDir 'last-push.json'
+    New-Item -ItemType Directory -Force -Path $stateDir -ErrorAction SilentlyContinue | Out-Null
+    $nowEpoch = [long][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $doPush = $false
+
+    if (Test-Path -LiteralPath $lastPushFile -PathType Leaf) {
+        try {
+            $lastPush = Get-Content -LiteralPath $lastPushFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $lastPushTs = if ($lastPush.ts) { [long]$lastPush.ts } else { 0 }
+        }
+        catch { $lastPushTs = 0 }
+        if (($nowEpoch - $lastPushTs) -ge 3600) { $doPush = $true }
+    }
+    else {
+        $doPush = $true
+    }
+
+    if ($doPush) {
+        try {
+            $remote = git -C $VaultRoot remote get-url origin 2>$null
+        }
+        catch { $remote = $null }
+        if (-not [string]::IsNullOrEmpty($remote)) {
+            try {
+                $branch = git -C $VaultRoot branch --show-current 2>$null
+            }
+            catch { $branch = 'main' }
+            if ([string]::IsNullOrEmpty($branch)) { $branch = 'main' }
+
+            try {
+                # Ensure local git identity
+                $userName = git -C $VaultRoot config user.name 2>$null
+                if ([string]::IsNullOrEmpty($userName)) {
+                    git -C $VaultRoot config --local user.name "avenoxbeyin" >$null 2>&1
+                    git -C $VaultRoot config --local user.email "beyin@avenox.local" >$null 2>&1
+                }
+
+                # Pull with ff-only, ignore failures
+                git -C $VaultRoot pull --ff-only -q origin $branch >$null 2>&1
+
+                # Stage all changes
+                git -C $VaultRoot add -A >$null 2>&1
+
+                # Check if there are staged changes
+                $hasChanges = $false
+                try {
+                    $diffResult = git -C $VaultRoot diff --cached --quiet 2>$null
+                    $hasChanges = ($LASTEXITCODE -ne 0)
+                }
+                catch { $hasChanges = $false }
+
+                if ($hasChanges) {
+                    $nowReadable = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                    git -C $VaultRoot commit -q -m "vault backup: $nowReadable" >$null 2>&1
+                    git -C $VaultRoot push -q origin $branch >$null 2>&1
+                    $payload = @{ ts = $nowEpoch; last = $nowReadable } | ConvertTo-Json -Compress
+                    Set-Content -LiteralPath $lastPushFile -Value $payload -Encoding utf8NoBOM -NoNewline
+                }
+            }
+            catch { }
+        }
+    }
+'@
+    Start-Job -ScriptBlock ([ScriptBlock]::Create($gitSyncScript)) -ArgumentList $script:BeyinProjectDir | Out-Null
+}
+
 # session-end.sh:60-61 -- the session is over; its start time and prompt count go.
 # needs_reflection.<key> deliberately survives: session-start reads and clears it.
 foreach ($path in @($startFile, $countFile)) {

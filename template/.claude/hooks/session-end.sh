@@ -57,6 +57,46 @@ if [ -n "$BEYIN_HOOK_INPUT" ]; then
   fi
 fi
 
+# Git sync - hourly backup to private repo (background, non-blocking)
+if command -v git >/dev/null 2>&1; then
+  nohup bash -c '
+    VAULT="$1"
+    STATE_DIR="$VAULT/.claude/scripts/.state"
+    LAST_PUSH_FILE="$STATE_DIR/last-push.json"
+    mkdir -p "$STATE_DIR"
+    NOW_EPOCH=$(date +%s)
+    DO_PUSH=0
+    if [ -f "$LAST_PUSH_FILE" ]; then
+      LAST_PUSH=$(python3 -c "import json,sys; d=json.load(open('\''$LAST_PUSH_FILE'\'')); print(d.get('\''ts'\'',0))" 2>/dev/null || echo 0)
+      case "$LAST_PUSH" in ''|*[!0-9]*) LAST_PUSH=0 ;; esac
+      [ $((NOW_EPOCH - LAST_PUSH)) -ge 3600 ] && DO_PUSH=1
+    else
+      DO_PUSH=1
+    fi
+    if [ "$DO_PUSH" -eq 1 ]; then
+      REMOTE=$(git -C "$VAULT" remote get-url origin 2>/dev/null || :)
+      if [ -n "$REMOTE" ]; then
+        BRANCH=$(git -C "$VAULT" branch --show-current 2>/dev/null || echo "main")
+        (
+          cd "$VAULT" || exit 0
+          if [ -z "$(git config user.name 2>/dev/null || :)" ]; then
+            git config --local user.name "avenoxbeyin"
+            git config --local user.email "beyin@avenox.local"
+          fi
+          git pull --ff-only -q origin "$BRANCH" >/dev/null 2>&1 || :
+          git add -A >/dev/null 2>&1 || :
+          if ! git diff --cached --quiet >/dev/null 2>&1; then
+            NOW_READABLE=$(date '+%Y-%m-%d %H:%M:%S')
+            git commit -q -m "vault backup: $NOW_READABLE" >/dev/null 2>&1 || :
+            git push -q origin "$BRANCH" >/dev/null 2>&1 || :
+            printf '\''{"ts":%s,"last":"%s"}\n'\'' "$NOW_EPOCH" "$NOW_READABLE" > "$LAST_PUSH_FILE"
+          fi
+        ) >/dev/null 2>&1
+      fi
+    fi
+  ' _ "$BEYIN_PROJECT_DIR" >/dev/null 2>&1 &
+fi
+
 [ -n "$BEYIN_SESSION_START_FILE" ] && rm -f "$BEYIN_SESSION_START_FILE" 2>/dev/null || :
 [ -n "$BEYIN_PROMPT_COUNT_FILE" ] && rm -f "$BEYIN_PROMPT_COUNT_FILE" 2>/dev/null || :
 exit 0
