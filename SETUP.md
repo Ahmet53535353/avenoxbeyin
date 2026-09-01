@@ -20,7 +20,7 @@
    go: "Vault iskeletini kuruyorum...", "Hafıza motorunu bağlıyorum...", "Derleyiciyi yerine
    koyuyorum...". Short sentences, no walls of text.
 7. **Everything is free.** No API key is required anywhere. The background summarizer and the
-   compiler run on the user's existing Claude subscription through `claude -p`.
+   compiler run on the user's existing Codex setup through `codex exec`.
 
 Placeholders you must resolve:
 `{{OS_NAME}}` · `{{USER_NAME}}` · `{{USER_BIO}}` · `{{COMPANION}}` · `{{VAULT_PATH}}` ·
@@ -599,7 +599,7 @@ Report in Turkish:
 
 The SessionEnd hook detaches the summarizer and returns in under a second. That is on purpose,
 the hook budget is tight. It also means the daily log is **not** on disk the moment the user types
-`/exit`. Do not send them back into `claude` before you have seen the file.
+`/exit`. Do not send them back into `codex` before you have seen the file.
 
 Tell them, in Turkish, exactly this shape of thing:
 

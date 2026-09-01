@@ -418,7 +418,8 @@ test_no_git_binary_uses_external_backup() {
     tool_path=$(command -v "$tool" 2>/dev/null) || continue
     ln -sf "$tool_path" "$fake_path/$tool" 2>/dev/null || :
   done
-  if PATH="$fake_path" command -v git >/dev/null 2>&1; then
+  hash -r 2>/dev/null || :
+  if ( PATH="$fake_path"; hash -r 2>/dev/null || :; command -v git >/dev/null 2>&1 ); then
     diag "sahte PATH hâlâ git görüyor, vaka kurulamadı"
     return 1
   fi

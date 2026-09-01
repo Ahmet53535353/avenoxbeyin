@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.dont_write_bytecode = True
 import _portalock
@@ -577,7 +578,7 @@ def _run_llm(prompt: str, stage: Path) -> str | None:
     environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    output_file = stage / ".beyin-llm-out.txt"
+    output_file = stage.parent / f".beyin-compile-out-{uuid.uuid4().hex}.txt"
 
     try:
         if codex is not None:
@@ -633,6 +634,12 @@ def _run_llm(prompt: str, stage: Path) -> str | None:
         return f"{error_prefix}-timeout"
     except OSError:
         return f"{error_prefix}-exec-error"
+    finally:
+        try:
+            output_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     if result.returncode != 0:
         return f"{error_prefix}-exit-{result.returncode}"
     return None

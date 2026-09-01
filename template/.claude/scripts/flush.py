@@ -406,27 +406,27 @@ def _run_llm(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
                 timeout=timeout,
                 check=False,
             )
+
+            if result.returncode != 0:
+                return None, f"{error_prefix}-exit-{result.returncode}"
+
+            if codex is not None:
+                # Read output from the -o file; fall back to stdout if the file is
+                # absent (older Codex builds or dry-run without -o support).
+                if output_file.exists():
+                    text = output_file.read_text(encoding="utf-8", errors="replace").strip()
+                else:
+                    text = result.stdout.strip()
+            else:
+                text = result.stdout.strip()
+
+            if not text:
+                return None, f"{error_prefix}-empty-output"
+            return text, None
     except subprocess.TimeoutExpired:
         return None, f"{error_prefix}-timeout"
     except OSError:
         return None, f"{error_prefix}-exec-error"
-
-    if result.returncode != 0:
-        return None, f"{error_prefix}-exit-{result.returncode}"
-
-    if codex is not None:
-        # Read output from the -o file; fall back to stdout if the file is
-        # absent (older Codex builds or dry-run without -o support).
-        if output_file.exists():
-            text = output_file.read_text(encoding="utf-8", errors="replace").strip()
-        else:
-            text = result.stdout.strip()
-    else:
-        text = result.stdout.strip()
-
-    if not text:
-        return None, f"{error_prefix}-empty-output"
-    return text, None
 
 
 def _append_daily(

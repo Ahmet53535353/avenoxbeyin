@@ -261,7 +261,10 @@ raise SystemExit(exit_code)
         ]
         if model is None:
             return calls
-        # Accept both "sonnet" (claude path) and "exec"/"--sandbox" (codex path).
+        if model == "haiku":
+            return [call for call in calls if "haiku" in call["argv"] or "--ephemeral" in call["argv"]]
+        if model == "sonnet":
+            return [call for call in calls if "sonnet" in call["argv"] or "--sandbox" in call["argv"]]
         return [call for call in calls if model in call["argv"]]
 
     def _payload_snapshot(self) -> dict[str, bytes]:
@@ -407,18 +410,11 @@ raise SystemExit(exit_code)
         calls = self._stub_calls("haiku")
         self.assertEqual(len(calls), 1)
         self.assertEqual(
-            calls[0]["argv"],
-            [
-                "-p",
-                "--model",
-                "haiku",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "",
-            ],
+            calls[0]["argv"][:3],
+            ["exec", "--ephemeral", "--skip-git-repo-check"],
         )
+        self.assertEqual(calls[0]["argv"][3], "-o")
+        self.assertEqual(calls[0]["argv"][5], "-")
         self.assertEqual(calls[0]["guard"], "beyin-scripts")
         self.assertNotEqual(Path(str(calls[0]["cwd"])), self.vault)
         self.assertIn("BEGIN UNTRUSTED TRANSCRIPT DATA", calls[0]["prompt"])
@@ -859,22 +855,11 @@ raise SystemExit(exit_code)
         self.assertEqual(state["ingested"][daily_path.name], expected)
         call = self._stub_calls("sonnet")[0]
         self.assertEqual(
-            call["argv"],
-            [
-                "-p",
-                "--model",
-                "sonnet",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "Read,Write,Edit,Glob,Grep",
-                "--permission-mode",
-                "acceptEdits",
-                "--allowedTools",
-                "Read,Write,Edit,Glob,Grep",
-            ],
+            call["argv"][:4],
+            ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check"],
         )
+        self.assertEqual(call["argv"][4], "-o")
+        self.assertEqual(call["argv"][6], "-")
         call_cwd = Path(str(call["cwd"]))
         # The stage must live outside the vault entirely (and thus outside
         # .claude/), not under state_dir: Claude CLI auto-protects any path
@@ -900,7 +885,7 @@ raise SystemExit(exit_code)
             (self.state / "compile-state.json").read_text(encoding="utf-8")
         )
         self.assertEqual(state["ingested"], {})
-        self.assertEqual(state["last_status"], "fail:claude-exit-7")
+        self.assertEqual(state["last_status"], "fail:codex-exit-7")
         health = json.loads(
             (self.state / "health.json").read_text(encoding="utf-8")
         )
