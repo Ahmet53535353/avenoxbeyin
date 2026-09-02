@@ -71,6 +71,7 @@ class AntigravityTest(unittest.TestCase):
             vault = Path(temporary) / "vault with spaces"
             scripts = vault / ".claude" / "scripts"
             scripts.mkdir(parents=True)
+            resolved_vault = vault.resolve()
             (scripts / "antigravity_hooks.py").write_text("# adapter\n", encoding="utf-8")
             agents = vault / ".agents"
             agents.mkdir()
@@ -89,7 +90,7 @@ class AntigravityTest(unittest.TestCase):
         self.assertEqual(set(managed), {"PreInvocation", "Stop"})
         for event, action in (("PreInvocation", "pre-invocation"), ("Stop", "stop")):
             command = managed[event][0]["command"]
-            self.assertIn(str(vault), command)
+            self.assertIn(str(resolved_vault), command)
             self.assertIn(action, command)
 
     def test_pre_invocation_uses_zero_based_first_call_and_ephemeral_message(self) -> None:
