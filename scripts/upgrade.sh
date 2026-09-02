@@ -25,7 +25,7 @@ BEYIN_TARGET_VERSION="2.2.0"
 BEYIN_SCRIPT_VERSION="2.2.0"
 BEYIN_MEMORY_DIR_NAME="🔮 850-Companion"
 BEYIN_HOOK_FILES="lib.sh session-start.sh prompt-counter.sh session-end.sh pre-compact.sh"
-BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py"
+BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py graf_kontrol.py"
 BEYIN_SKILL_DIRS="beyin-doktor gecmis-import"
 BEYIN_BACKUP_ROOT="${BEYIN_BACKUP_ROOT:-$HOME/.avenoxbeyin-yedek}"
 

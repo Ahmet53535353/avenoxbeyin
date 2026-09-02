@@ -307,7 +307,7 @@ test_fresh_shell_chain() {
     cmp -s "$TEST_ROOT/template/.claude/hooks/$hook" "$vault/.claude/hooks/$hook" \
       || { diag "v2 kancası kaynakla aynı değil: $hook"; return 1; }
   done
-  for script in flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py; do
+  for script in flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py graf_kontrol.py; do
     assert_file "$vault/.claude/scripts/$script" || return 1
     cmp -s "$TEST_ROOT/template/.claude/scripts/$script" "$vault/.claude/scripts/$script" \
       || { diag "v2 scripti kaynakla aynı değil: $script"; return 1; }

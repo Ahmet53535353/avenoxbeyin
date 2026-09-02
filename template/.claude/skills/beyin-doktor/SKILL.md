@@ -219,6 +219,25 @@ Düzeltme: yedeği vault dışına taşı ve `chmod 600` ver; git izliyorsa
 `git rm --cached <dosya>` ile izlemeden çıkar, `.gitignore` kuralını doğrula, ve
 sızmış anahtarı sağlayıcıdan **iptal edip yenile**.
 
+### 16. Grafik bütünlüğü (kırık bağlantı + yetim not)
+
+```bash
+python3 .claude/scripts/graf_kontrol.py
+```
+
+Hafıza düz bir dosya yığını değil **graf**: bir not ancak ona giden bir bağlantı varsa
+bulunur. Yetim not diskte durur ama ajan ona ulaşmak için bütün vault'u taramak zorunda
+kalır, yani ya token yakar ya bulamayıp uydurur. Kırık bağlantı ise haritada var olmayan
+bir adresi gösterir. İkisini de başka hiçbir kontrol yakalamıyor.
+
+🟢 kırık bağlantı 0. 🟡 kırık bağlantı 1–20. 🔴 kırık bağlantı 20 üstü.
+Yetim sayısı tek başına 🔴 değildir: taslak, arşivlik ve tek seferlik notlar doğal olarak
+yetimdir. Asıl bakılacak yer `🔮 850-Companion` — hafıza dosyalarından biri yetim çıkarsa
+süreklilik zinciri kopmuş demektir.
+Düzeltme: `--tam` ile listeyi aç. Kırık bağlantı için ya hedef notu oluştur ya bağlantıyı
+düzelt; hedef bilerek yoksa (belgede örnek olarak geçen `[[wikilink]]` gibi) dokunma.
+Yetim not için ilgili üs nottan veya `Dashboard.md`'den bağlantı ver.
+
 ## Rapor formatı
 
 Tüm kontroller bittikten sonra tek tablo bas:
@@ -243,6 +262,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | Kurallar | 🟢 | var, 24 satır |
 | Çift etkin kanca | 🔴 | SessionEnd 2 kez bağlı |
 | Sır yedeği artığı | 🟢 | temiz |
+| Grafik bütünlüğü | 🟡 | 4 kırık bağlantı, 12 yetim not |
 ```
 
 Tablodan sonra sadece 🔴 satırlar için "Düzeltme:" ile başlayan birer satır yaz, komutu da ver.
