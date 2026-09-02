@@ -177,7 +177,18 @@ if is_compile:
         target = Path("knowledge/concepts/escape.md")
         target.symlink_to("../../daily/input.md")
 else:
-    output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
+    sequence = os.environ.get("BEYIN_TEST_OUTPUT_SEQUENCE")
+    if sequence:
+        outputs = json.loads(sequence)
+        state_path = Path(os.environ["BEYIN_TEST_SEQUENCE_STATE"])
+        try:
+            index = int(state_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            index = 0
+        state_path.write_text(str(index + 1), encoding="utf-8")
+        output = outputs[min(index, len(outputs) - 1)]
+    else:
+        output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
     if output:
         print(output)
 
@@ -408,9 +419,48 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
 
         second = self._run_flush(hook, BEYIN_TEST_OUTPUT=VALID_SUMMARY)
         self.assertEqual(second.returncode, 0)
-        self.assertEqual(len(self._stub_calls("haiku")), 2)
+        self.assertEqual(len(self._stub_calls("haiku")), 3)
         daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
         self.assertEqual(daily_body.count("### Oturum ("), 1)
+
+    def test_summary_preamble_is_trimmed_and_reported(self) -> None:
+        transcript = self._write_transcript([("user", "kalıcı karar")])
+        hook = self._write_hook("preamble-session", transcript)
+        preamble = "Şüpheli içerik uyarısı; şema gövdesi aşağıdadır.\n\n"
+        result = self._run_flush(
+            hook,
+            BEYIN_TEST_OUTPUT=preamble + VALID_SUMMARY,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
+        self.assertNotIn(preamble.strip(), daily_body)
+        self.assertIn(VALID_SUMMARY, daily_body)
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("warn:summary-preamble-trimmed", health["warnings"])
+
+    def test_schema_mismatch_retries_once_then_appends(self) -> None:
+        transcript = self._write_transcript([("user", "kalıcı karar")])
+        hook = self._write_hook("schema-retry-session", transcript)
+        result = self._run_flush(
+            hook,
+            BEYIN_TEST_OUTPUT_SEQUENCE=json.dumps(
+                ["## Bağlam\nEksik çıktı", VALID_SUMMARY],
+                ensure_ascii=False,
+            ),
+            BEYIN_TEST_SEQUENCE_STATE=str(self.root / "summary-sequence"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._stub_calls("haiku")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("Bu ikinci şema denemesidir", calls[1]["prompt"])
+        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
+        self.assertEqual(daily_body.count("### Oturum ("), 1)
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("warn:summary-schema-retried", health["warnings"])
 
     def test_concurrent_flushes_make_one_call_and_one_daily_entry(self) -> None:
         transcript = self._write_transcript([("user", "eşzamanlı oturum")])
