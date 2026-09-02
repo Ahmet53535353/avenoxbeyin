@@ -1,6 +1,6 @@
-# 🧠 avenoxbeyin v2.1: hatırlamayı unutmayan ikinci beyin
+# 🧠 avenoxbeyin v2.2: hatırlamayı unutmayan ikinci beyin
 
-[Obsidian](https://obsidian.md) + [Claude Code](https://claude.com/claude-code) veya Codex üstünde çalışan,
+[Obsidian](https://obsidian.md) + Claude Code, Codex veya Google Antigravity üstünde çalışan,
 açık kaynak bir **ikinci beyin**. Yerel bir Markdown vault, kalıcı hafıza, sıfır bağımlılık,
 sıfır ekstra ücret. Dosya yönetmezsin, konuşursun.
 
@@ -46,6 +46,17 @@ uygulatabilirsin. Kurulum
 `/hooks` ekranından proje kancalarını onaylaman gerekir; güven hash'leri kullanıcı adına
 değiştirilmez. Claude Code ve Codex aynı router, skill ve kanca kodunu okur; iki ayrı kopya yoktur.
 
+Google Antigravity kullanıyorsan:
+
+```bash
+git clone https://github.com/avenoxai/avenoxbeyin.git
+cd avenoxbeyin
+agy -p "Read SETUP-ANTIGRAVITY.md and follow it exactly to set up my second brain."
+```
+
+Antigravity adaptörü de aynı `.claude/scripts` motorunu kullanır; `flush.py`, `compile.py` veya
+skill'lerin ikinci kopyasını oluşturmaz. Doğrudan Gemini API anahtarı istemez.
+
 ### Yerel Windows (WSL değil)
 
 Yerel Windows için ayrı bir kurulum yolu vardır:
@@ -87,7 +98,7 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
 
 ---
 
-## v1/v2.0 → v2.1
+## v1/v2.0/v2.1 → v2.2
 
 | | v1 | v2 |
 | --- | --- | --- |
@@ -115,14 +126,14 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
         |                                    |
         +------------------+-----------------+
                            v
-                       flush.py           (claude -p --model haiku)
+                       flush.py           (claude -p veya agy -p)
                   transkripti okur, Türkçe özet çıkarır
                            v
                  daily/YYYY-MM-DD.md      <-- makine yazar, sen değil
                            |
         (saat 18'den sonra, günde bir kez, değişen log varsa)
                            v
-                      compile.py          (claude -p --model sonnet)
+                      compile.py          (claude -p veya agy -p)
                            v
    knowledge/concepts/*.md + knowledge/connections/*.md + knowledge/index.md
                            |
@@ -162,14 +173,13 @@ dosyalarını kendi eliyle günceller. Makine katmanı onun yerine geçmez, alt�
 
 ## Maliyet, dürüst hâliyle
 
-Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Claude aboneliğinin günlük limitinden
-küçük bir pay kullanır (özet: her oturum sonunda küçük bir Haiku çağrısı; derleme: günde bir
-Sonnet çağrısı).
+Ekstra API faturası yok; arka plan özetleyici ve derleyici kullandığın Claude Code veya
+Antigravity hesabının mevcut kotasından küçük bir pay kullanır.
 
 ## Gereksinimler
 
-Zorunlu, her platformda: [Claude Code](https://claude.com/claude-code),
-[Obsidian](https://obsidian.md) ve Python 3 (macOS/Linux'ta `python3`; yerel Windows'ta çalışan
+Zorunlu, her platformda: [Claude Code](https://claude.com/claude-code) **veya** Google
+Antigravity CLI, [Obsidian](https://obsidian.md) ve Python 3 (macOS/Linux'ta `python3`; yerel Windows'ta çalışan
 `python` veya `python3`). Python opsiyonel değil: günlük log da gece derlemesi de onun üstünde
 çalışır.
 
@@ -183,9 +193,13 @@ Masaüstü kısayolu macOS'ta `osacompile` ve AppKit kullanır, ikisi de Linux't
 kendisi düz Markdown, yani her yerde açılır; kurulum akışının tamamı için doğrulanmış tek platform
 şu an macOS.
 
+Kod reposu, video dosyaları ve `🏰 300-Projects/` arasındaki sınır için
+[`docs/PROJECT-WORKFLOW.md`](docs/PROJECT-WORKFLOW.md) rehberine bak. OpenCode'un mevcut destek
+sınırı da orada açıkça yazıyor.
+
 ## Bir şey ters giderse
 
-Vault klasöründe `claude` açıp `beyin doktor` yaz. Kancalar, scriptler, python3, `claude` CLI,
+Vault klasöründe kullandığın agent'ı açıp `beyin doktor` yaz. Kancalar, scriptler, python3, model CLI,
 günlük log tazeliği, son derleme durumu, iCloud çakışma dosyaları ve git durumu tek tabloda gelir,
 her kırmızı satırın altında düzeltme komutu yazar.
 
@@ -207,8 +221,8 @@ MIT, [LICENSE](LICENSE) dosyasına bak. PR'lar açık.
 
 ## In English (short version)
 
-**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code or
-Codex, with
+**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code,
+Codex, or Google Antigravity, with
 memory that survives across sessions. v1 gave you continuity but depended on the model remembering
 to write its memory files. v2's thesis is that **memory must be a mechanism, not a discipline**: a
 `SessionEnd` and a `PreCompact` hook flush every conversation into `daily/` logs automatically via
@@ -234,7 +248,7 @@ real Linux desktop. Native Windows has its own PowerShell installer and CI suite
 Codex wiring is regression-tested, but a live native-Windows Codex session has not yet been
 claimed as verified.
 
-No extra cost: everything runs on your existing Claude subscription through `claude -p`. No API
-keys, no paid services, bash and python3 stdlib only. Knowledge-compilation architecture credit:
+No extra API bill: the engine uses your existing Claude Code or Antigravity login through
+`claude -p` or `agy -p`. No direct model API keys are required. Knowledge-compilation architecture credit:
 Andrej Karpathy's LLM knowledge base pattern,
 https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f. MIT licensed.

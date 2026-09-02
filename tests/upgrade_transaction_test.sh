@@ -283,7 +283,7 @@ test_stamp_only_finalize() {
   assert_eq 0 "$RUN_STATUS" "finalize başarısız" || return 1
   assert_file "$vault/.beyin-version" || return 1
   stamp=$(sed -n '1p' "$vault/.beyin-version")
-  assert_eq 2.1.0 "$stamp" "sürüm damgası yanlış" || return 1
+  assert_eq 2.2.0 "$stamp" "sürüm damgası yanlış" || return 1
 }
 
 test_fresh_shell_chain() {
@@ -307,7 +307,7 @@ test_fresh_shell_chain() {
     cmp -s "$TEST_ROOT/template/.claude/hooks/$hook" "$vault/.claude/hooks/$hook" \
       || { diag "v2 kancası kaynakla aynı değil: $hook"; return 1; }
   done
-  for script in flush.py compile.py _portalock.py render_codex_hooks.py; do
+  for script in flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py; do
     assert_file "$vault/.claude/scripts/$script" || return 1
     cmp -s "$TEST_ROOT/template/.claude/scripts/$script" "$vault/.claude/scripts/$script" \
       || { diag "v2 scripti kaynakla aynı değil: $script"; return 1; }
@@ -320,7 +320,9 @@ test_fresh_shell_chain() {
     || { diag ".codex/hooks ortak store değil"; return 1; }
   python3 -m json.tool "$vault/.codex/hooks.json" >/dev/null \
     || { diag ".codex/hooks.json geçerli değil"; return 1; }
-  assert_eq 2.1.0 "$(sed -n '1p' "$vault/.beyin-version")" "taze shell zinciri damgası" || return 1
+  python3 -m json.tool "$vault/.agents/hooks.json" >/dev/null \
+    || { diag ".agents/hooks.json geçerli değil"; return 1; }
+  assert_eq 2.2.0 "$(sed -n '1p' "$vault/.beyin-version")" "taze shell zinciri damgası" || return 1
 }
 
 test_apply_failure_no_stamp() {
@@ -354,12 +356,12 @@ test_already_current() {
   case_dir=$(new_case)
   vault="$case_dir/vault"
   make_v1_vault "$vault" --clean-local
-  printf '2.1.0\n' > "$vault/.beyin-version"
+  printf '2.2.0\n' > "$vault/.beyin-version"
   before=$(tree_digest "$vault")
   run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
-  assert_eq 3 "$RUN_STATUS" "zaten v2.1 vault apply çıkışı" || return 1
+  assert_eq 3 "$RUN_STATUS" "zaten v2.2 vault apply çıkışı" || return 1
   after=$(tree_digest "$vault")
-  assert_eq "$before" "$after" "zaten v2.1 vault apply ile değişti" || return 1
+  assert_eq "$before" "$after" "zaten v2.2 vault apply ile değişti" || return 1
 }
 
 test_v2_0_is_upgradeable() {
@@ -369,9 +371,25 @@ test_v2_0_is_upgradeable() {
   make_v1_vault "$vault" --clean-local
   printf '2.0.0\n' > "$vault/.beyin-version"
   run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
-  assert_eq 0 "$RUN_STATUS" "v2.0 -> v2.1 apply başarısız" || return 1
+  assert_eq 0 "$RUN_STATUS" "v2.0 -> v2.2 apply başarısız" || return 1
   assert_file "$vault/.codex/hooks.json" || return 1
   assert_no_file "$vault/.beyin-version.tmp" || return 1
+}
+
+test_v2_1_is_upgradeable() {
+  local case_dir vault
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+  printf '2.1.0\n' > "$vault/.beyin-version"
+  run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
+  assert_eq 0 "$RUN_STATUS" "v2.1 -> v2.2 apply başarısız" || return 1
+  run_upgrade "$case_dir" "$case_dir/finalize.out" --vault "$vault" --stage finalize
+  assert_eq 0 "$RUN_STATUS" "v2.1 -> v2.2 finalize başarısız" || return 1
+  assert_eq 2.2.0 "$(sed -n '1p' "$vault/.beyin-version")" "v2.1 yükseltme damgası" || return 1
+  assert_file "$vault/.agents/hooks.json" || return 1
+  assert_file "$vault/.claude/scripts/antigravity_hooks.py" || return 1
 }
 
 test_no_git_verified_snapshot() {
@@ -495,6 +513,85 @@ bash -n "$UPGRADE"
 bash -n "$FIXTURE"
 bash -n "$0"
 
+test_untracks_tracked_pycache() {
+  # A vault upgraded before .gitignore knew about __pycache__ carries compiled bytecode in the
+  # index. Adding the ignore rule alone does not fix that, so the upgrade must also untrack it,
+  # and it must leave the files on disk: python regenerates them, they are not the user's data.
+  local case_dir vault pyc rel still_tracked
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+
+  rel=".claude/scripts/__pycache__/flush.cpython-312.pyc"
+  pyc="$vault/$rel"
+  mkdir -p "$(dirname "$pyc")"
+  printf 'not real bytecode, only a tracked placeholder\n' > "$pyc"
+  git -C "$vault" add -f -- "$rel" >/dev/null 2>&1 || { diag "fikstür: .pyc eklenemedi"; return 1; }
+  git -C "$vault" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q -m "v1: derlenmis bytecode izleniyor" || { diag "fikstür: commit basarisiz"; return 1; }
+  git -C "$vault" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
+    || { diag "fikstür kurulamadi: .pyc izlenmiyor"; return 1; }
+
+  run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
+  assert_eq 0 "$RUN_STATUS" "apply basarisiz" || { diag "$(cat "$case_dir/apply.out")"; return 1; }
+  run_upgrade "$case_dir" "$case_dir/finalize.out" --vault "$vault" --stage finalize
+  assert_eq 0 "$RUN_STATUS" "finalize basarisiz" || { diag "$(cat "$case_dir/finalize.out")"; return 1; }
+
+  assert_file "$pyc" || { diag ".pyc diskten silinmis olmamali"; return 1; }
+
+  still_tracked=$(git -C "$vault" ls-files -- '*.pyc' '*/__pycache__/*' | tr '\n' ' ')
+  if [ -n "$still_tracked" ]; then
+    diag "yukseltmeden sonra hala izlenen bytecode var: $still_tracked"
+    return 1
+  fi
+  grep -qxF '__pycache__/' "$vault/.gitignore" || { diag ".gitignore __pycache__/ icermiyor"; return 1; }
+  grep -qxF '*.pyc' "$vault/.gitignore" || { diag ".gitignore *.pyc icermiyor"; return 1; }
+}
+
+test_pycache_untrack_failure_is_fatal() {
+  local case_dir vault pyc rel fake_path real_git
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+
+  rel=".claude/scripts/__pycache__/flush.cpython-312.pyc"
+  pyc="$vault/$rel"
+  mkdir -p "$(dirname "$pyc")"
+  printf 'not real bytecode, only a tracked placeholder\n' > "$pyc"
+  git -C "$vault" add -f -- "$rel" >/dev/null 2>&1 || return 1
+  git -C "$vault" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q -m "v1: derlenmis bytecode izleniyor" || return 1
+
+  real_git=$(command -v git)
+  fake_path="$case_dir/bin"
+  mkdir -p "$fake_path"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [ "${1:-}" = "-C" ] && [ "${3:-}" = "rm" ]; then exit 42; fi' \
+    'exec "$REAL_GIT" "$@"' > "$fake_path/git"
+  chmod +x "$fake_path/git"
+
+  prepare_case_dirs "$case_dir"
+  set +e
+  env HOME="$case_dir/home" \
+      TMPDIR="$case_dir/tmp" \
+      BEYIN_BACKUP_ROOT="$case_dir/backup" \
+      REAL_GIT="$real_git" \
+      PATH="$fake_path:$PATH" \
+      "$BASH_BIN" "$UPGRADE" --vault "$vault" --stage apply >"$case_dir/apply.out" 2>&1
+  RUN_STATUS=$?
+  set -e
+
+  [ "$RUN_STATUS" -ne 0 ] || { diag "git rm hatasi yutuldu"; return 1; }
+  grep -q "izlemeden çıkarılamadı" "$case_dir/apply.out" \
+    || { diag "git rm hatasi acik raporlanmadi"; return 1; }
+  git -C "$vault" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
+    || { diag "basarisiz git rm vakasinda index beklenmedik bicimde degisti"; return 1; }
+  assert_file "$pyc" || return 1
+}
+
 run_case "--vault olmadan apply kullanım hatası verir ve yazmaz" test_missing_vault
 run_case "göreli --vault kullanım hatasıyla reddedilir" test_relative_vault
 run_case "kök dizin vault olarak reddedilir ve değişmez" test_root_vault
@@ -505,13 +602,16 @@ run_case "sürüm damgasını apply değil yalnız finalize yazar" test_stamp_on
 run_case "check apply finalize ayrı taze shell süreçlerinde tamamlanır" test_fresh_shell_chain
 run_case "apply kopyalama hatasında başarısız olur ve damga yazmaz" test_apply_failure_no_stamp
 run_case "finalize kapısı bozulunca başarısız olur ve damga yazmaz" test_finalize_failure_no_stamp
-run_case "zaten 2.1.0 damgalı vault apply için 3 döndürür" test_already_current
-run_case "2.0.0 damgalı vault harness-neutral v2.1'e yükseltilebilir" test_v2_0_is_upgradeable
+run_case "zaten 2.2.0 damgalı vault apply için 3 döndürür" test_already_current
+run_case "2.0.0 damgalı vault v2.2'ye yükseltilebilir" test_v2_0_is_upgradeable
+run_case "2.1.0 damgalı vault Antigravity destekli v2.2'ye yükseltilebilir" test_v2_1_is_upgradeable
 run_case "git olmayan vault doğrulanmış anlık görüntü bırakmadan ilerlemiyor" test_no_git_verified_snapshot
 run_case "git ikilisi yokken harici doğrulanmış yedek dalı gerçekten çalışıyor" test_no_git_binary_uses_external_backup
 run_case "yeniden adlandırma onayı yoksa apply atomik olarak 10 döndürür" test_rename_confirmation_is_atomic
 run_case "yeniden adlandırma Core.md içeriğini aynen korur" test_rename_preserves_core
 run_case "kullanıcının kendi kancası yükseltmede aynen korunur" test_user_hook_preserved
+run_case "izlenen __pycache__ artıkları izden çıkarılır ama diskte kalır" test_untracks_tracked_pycache
+run_case "__pycache__ izlemeden çıkarılamazsa yükseltme açıkça durur" test_pycache_untrack_failure_is_fatal
 
 printf '1..%s\n' "$TEST_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]

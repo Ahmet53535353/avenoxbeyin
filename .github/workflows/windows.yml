@@ -63,3 +63,7 @@ jobs:
         env:
           BEYIN_TEST_TIMEOUT_SCALE: '6'
         run: python tests/scripts_test_windows.py
+
+      - name: Antigravity adaptor testleri
+        shell: pwsh
+        run: python tests/antigravity_test.py

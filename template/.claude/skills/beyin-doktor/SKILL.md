@@ -60,16 +60,24 @@ test -L AGENTS.md && [ "$(readlink AGENTS.md)" = "CLAUDE.md" ] && echo "router: 
 Düzeltme: `python3 .claude/scripts/render_codex_hooks.py --vault "$PWD" --platform posix`, sonra
 Codex içinde `/hooks` ekranından değişen proje kancalarını onayla. Güven hash'ini elle yazma.
 
-### 4. python3 ve claude CLI yolda mı
+### 3c. Antigravity kanca adaptörü
 
 ```bash
-if command -v python3 >/dev/null 2>&1; then echo "python3: $(python3 -V 2>&1)"; else echo "python3: YOK"; fi; if command -v claude >/dev/null 2>&1; then echo "claude: var"; else echo "claude: YOK"; fi
+python3 -c "import json;d=json.load(open('.agents/hooks.json'));h=d.get('avenox-beyin',{});print('antigravity:', 'ok' if len(h.get('PreInvocation',[]))==1 and len(h.get('Stop',[]))==1 else 'BOZUK')" 2>/dev/null || echo "antigravity: BOZUK/YOK"
 ```
 
-🟢 ikisi de var. 🔴 python3 yoksa flush ve derleme hiç çalışmaz, claude yoksa arka plan
-özetleyici sessizce durur.
-Düzeltme: python3 kur (macOS: Xcode command line tools, Linux: dağıtım paketi), claude CLI'yi
-PATH'e ekle.
+🟢 `ok`. 🔴 ise Antigravity hafızayı enjekte etmiyor veya son turu günlüğe taşımıyor.
+Düzeltme: `python3 .claude/scripts/render_antigravity_hooks.py --vault "$PWD" --platform posix`.
+
+### 4. python3 ve model CLI yolda mı
+
+```bash
+if command -v python3 >/dev/null 2>&1; then echo "python3: $(python3 -V 2>&1)"; else echo "python3: YOK"; fi; if command -v claude >/dev/null 2>&1; then echo "claude: var"; elif command -v agy >/dev/null 2>&1; then echo "agy: var"; else echo "model CLI: YOK"; fi
+```
+
+🟢 python3 ile `claude` veya `agy` var. 🔴 python3 yoksa motor hiç çalışmaz; iki model CLI da
+yoksa arka plan özetleyici durur.
+Düzeltme: python3 kur; kullandığın Claude Code veya Antigravity CLI'yi PATH'e ekle.
 
 ### 5. python3-missing işareti
 
@@ -150,7 +158,7 @@ Düzeltme: repo yoksa `git init` ve ilk commit. Birikme varsa commit at.
 if [ -f .beyin-version ]; then echo "surum: $(head -1 .beyin-version)"; else echo "surum: DOSYA YOK, v1 vault"; fi
 ```
 
-🟢 `2.1.0`. 🟡 `2.0.0` veya dosya yok: harness-neutral yükseltme yapılabilir.
+🟢 `2.2.0`. 🟡 `2.1.0`, `2.0.0` veya dosya yok: çoklu-harness yükseltmesi yapılabilir.
 Düzeltme: SETUP.md içindeki yükseltme yolunu (B modu) uygula. Yükseltme mevcut hafıza
 dosyalarına dokunmaz, sadece eksik parçaları ekler.
 
@@ -221,8 +229,9 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | Hook dosyaları | 🟢 | dördü de yerinde ve çalıştırılabilir |
 | settings.json bağlantısı | 🟢 | dört olay da bağlı |
 | Codex bağlantıları | 🟢 | router, skill ve kanca store ortak; hooks.json mutlak |
+| Antigravity bağlantıları | 🟢 | PreInvocation ve Stop adaptörü kayıtlı |
 | Özyineleme koruması | 🟢 | hepsinde var |
-| python3 ve claude | 🟢 | python3 3.11.6, claude var |
+| python3 ve model CLI | 🟢 | python3 3.11.6, agy var |
 | python3-missing işareti | 🟢 | işaret yok |
 | Günlük log tazeliği | 🟡 | son log 51 saat önce |
 | Derleme durumu | 🔴 | last_status fail:timeout |
@@ -230,7 +239,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | Bilgi indeksi | 🟢 | 42 satır |
 | iCloud çakışmaları | 🟢 | temiz |
 | Git | 🟢 | repo var, 3 dosya kaydedilmemiş |
-| Sürüm | 🟢 | 2.1.0 |
+| Sürüm | 🟢 | 2.2.0 |
 | Kurallar | 🟢 | var, 24 satır |
 | Çift etkin kanca | 🔴 | SessionEnd 2 kez bağlı |
 | Sır yedeği artığı | 🟢 | temiz |

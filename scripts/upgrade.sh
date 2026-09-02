@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# avenoxbeyin v1/v2.0 -> v2.1 upgrade. Single process, transactional, fail loud.
+# avenoxbeyin v1/v2.0/v2.1 -> v2.2 upgrade. Single process, transactional, fail loud.
 #
 # Why this file exists: the upgrade used to live as a chain of fenced Bash blocks in SETUP.md that
 # assigned shell variables in one block and used them in the next. Every Claude Bash call is a
@@ -21,11 +21,11 @@
 #             11 needs --confirm-local-hooks
 set -euo pipefail
 
-BEYIN_TARGET_VERSION="2.1.0"
-BEYIN_SCRIPT_VERSION="2.1.0"
+BEYIN_TARGET_VERSION="2.2.0"
+BEYIN_SCRIPT_VERSION="2.2.0"
 BEYIN_MEMORY_DIR_NAME="🔮 850-Companion"
 BEYIN_HOOK_FILES="lib.sh session-start.sh prompt-counter.sh session-end.sh pre-compact.sh"
-BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py"
+BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py"
 BEYIN_SKILL_DIRS="beyin-doktor gecmis-import"
 BEYIN_BACKUP_ROOT="${BEYIN_BACKUP_ROOT:-$HOME/.avenoxbeyin-yedek}"
 
@@ -122,6 +122,28 @@ assert_no_secret_staged() {
   fi
 }
 
+untrack_ignored_pycache() {
+  # .gitignore now carries __pycache__/ and *.pyc, but an ignore rule never untracks a path that
+  # is already in the index. A vault upgraded before those rules existed keeps its compiled
+  # bytecode tracked: the finalize gate imports the scripts, python rewrites the .pyc files, and
+  # "git add" stages them into the upgrade commit on every single run. Untrack them here, before
+  # the snapshot, and leave every file on disk.
+  #
+  # Deliberately separate from untrack_ignored_secrets: bytecode is not a secret, so this must not
+  # print the "revoke your API key" warning that function ends with.
+  command -v git >/dev/null 2>&1 || return 0
+  [ -d "$V/.git" ] || return 0
+  TRACKED_PYC=$(git -C "$V" ls-files -- '*.pyc' '*/__pycache__/*' 2>/dev/null | sort -u || printf '')
+  [ -n "$TRACKED_PYC" ] || return 0
+  PYC_COUNT=$(printf '%s\n' "$TRACKED_PYC" | grep -c . || printf '0')
+  printf '%s\n' "$TRACKED_PYC" | while IFS= read -r PYC; do
+    [ -n "$PYC" ] || continue
+    git -C "$V" rm --cached -q -- "$PYC" >/dev/null 2>&1 \
+      || die "derlenmiş Python dosyası izlemeden çıkarılamadı: $PYC"
+  done
+  say "izlemeden çıkarıldı (derlenmiş Python, dosyalar diskte duruyor): $PYC_COUNT adet"
+}
+
 record() { printf '%s\n' "$1" >> "$MANIFEST"; }
 
 copy_file() {
@@ -158,6 +180,8 @@ ensure_gitignore() {
 .DS_Store
 .obsidian/workspace*
 .obsidian/cache
+__pycache__/
+*.pyc
 IGN
   say "gitignore: $GI_ADDED satır eklendi"
 }
@@ -238,8 +262,8 @@ if [ "$CUR_VERSION" = "$BEYIN_TARGET_VERSION" ] && [ "$STAGE" != "finalize" ]; t
   exit 3
 fi
 case "$CUR_VERSION" in
-  ""|2.0.0|"$BEYIN_TARGET_VERSION") ;;
-  *) die "uyumsuz sürüm damgası: '$CUR_VERSION' (desteklenen: boş v1, 2.0.0 veya $BEYIN_TARGET_VERSION)" ;;
+  ""|2.0.0|2.1.0|"$BEYIN_TARGET_VERSION") ;;
+  *) die "uyumsuz sürüm damgası: '$CUR_VERSION' (desteklenen: boş v1, 2.0.0, 2.1.0 veya $BEYIN_TARGET_VERSION)" ;;
 esac
 
 NEED_RENAME=0
@@ -318,6 +342,7 @@ if [ "$STAGE" = "apply" ]; then
   step "1/9 .gitignore (anlık görüntüden ÖNCE, sır sahnelenmesin diye)"
   ensure_gitignore
   untrack_ignored_secrets
+  untrack_ignored_pycache
 
   step "2/9 anlık görüntü (doğrulanmış)"
   SNAP_OK=0
@@ -419,7 +444,7 @@ if [ "$STAGE" = "apply" ]; then
     say "  $H (çalıştırılabilir, sözdizimi ✓)"
   done
 
-  step "7b/9 Claude + Codex ortak store ve Codex kanca kaydı"
+  step "7b/9 ortak store, Codex ve Antigravity kanca kayıtları"
   mkdir -p "$V/.agents" "$V/.codex"
 
   if [ ! -e "$V/AGENTS.md" ] && [ ! -L "$V/AGENTS.md" ]; then
@@ -451,14 +476,18 @@ if [ "$STAGE" = "apply" ]; then
 
   python3 "$V/.claude/scripts/render_codex_hooks.py" --vault "$V" --platform posix \
     >/dev/null || die ".codex/hooks.json üretilemedi"
+  python3 "$V/.claude/scripts/render_antigravity_hooks.py" --vault "$V" --platform posix \
+    >/dev/null || die ".agents/hooks.json üretilemedi"
   record "AGENTS.md"
   record ".agents/skills"
   record ".codex/hooks"
   record ".codex/hooks.json"
+  record ".agents/hooks.json"
   say "  AGENTS.md -> CLAUDE.md"
   say "  .agents/skills -> .claude/skills"
   say "  .codex/hooks -> .claude/hooks"
   say "  .codex/hooks.json (mutlak yollar, SessionEnd 3s)"
+  say "  .agents/hooks.json (Antigravity PreInvocation + Stop adaptörü)"
 
   step "8/9 settings.json kanca kaydı (birleştir, tekrar çalıştırılabilir)"
   python3 - "$V" "$REPO" <<'PY' || die "settings.json birleştirme başarısız"
@@ -659,6 +688,36 @@ print("ok" if not bad else ", ".join(bad))
 PY
 ) || R="kontrol çalışmadı"
 gate "Codex mutlak kanca kaydı" "$R"
+
+R=$(python3 - "$V" <<'PY'
+import json, os, sys
+v = os.path.realpath(sys.argv[1])
+p = os.path.join(v, ".agents", "hooks.json")
+try:
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+except (OSError, ValueError) as exc:
+    print("hooks.json okunamadı: %s" % exc)
+    raise SystemExit(0)
+managed = d.get("avenox-beyin") if isinstance(d, dict) else None
+bad = []
+for event, action, timeout in (
+    ("PreInvocation", "pre-invocation", 15),
+    ("Stop", "stop", 5),
+):
+    entries = (managed or {}).get(event) or []
+    if len(entries) != 1:
+        bad.append("%s=%d" % (event, len(entries)))
+        continue
+    command = entries[0].get("command", "") or ""
+    if "antigravity_hooks.py" not in command or action not in command:
+        bad.append("%s komut" % event)
+    elif entries[0].get("timeout") != timeout:
+        bad.append("%s timeout" % event)
+print("ok" if not bad else ", ".join(bad))
+PY
+) || R="kontrol çalışmadı"
+gate "Antigravity kanca kaydı" "$R"
 
 for D in "daily" "knowledge/concepts" "knowledge/connections" ".claude/scripts/.state"; do
   R="ok"; [ -d "$V/$D" ] || R="klasör yok"
