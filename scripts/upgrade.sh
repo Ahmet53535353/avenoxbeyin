@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# avenoxbeyin v1/v2.0/v2.1 -> v2.2 upgrade. Single process, transactional, fail loud.
+# avenoxbeyin v1/v2.0/v2.1/v2.2 -> v2.3 upgrade. Single process, transactional, fail loud.
 #
 # Why this file exists: the upgrade used to live as a chain of fenced Bash blocks in SETUP.md that
 # assigned shell variables in one block and used them in the next. Every Claude Bash call is a
@@ -21,11 +21,11 @@
 #             11 needs --confirm-local-hooks
 set -euo pipefail
 
-BEYIN_TARGET_VERSION="2.2.0"
-BEYIN_SCRIPT_VERSION="2.2.0"
+BEYIN_TARGET_VERSION="2.3.0"
+BEYIN_SCRIPT_VERSION="2.3.0"
 BEYIN_MEMORY_DIR_NAME="🔮 850-Companion"
 BEYIN_HOOK_FILES="lib.sh session-start.sh prompt-counter.sh session-end.sh pre-compact.sh"
-BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py"
+BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py graf_kontrol.py"
 BEYIN_SKILL_DIRS="beyin-doktor gecmis-import"
 BEYIN_BACKUP_ROOT="${BEYIN_BACKUP_ROOT:-$HOME/.avenoxbeyin-yedek}"
 
@@ -262,8 +262,8 @@ if [ "$CUR_VERSION" = "$BEYIN_TARGET_VERSION" ] && [ "$STAGE" != "finalize" ]; t
   exit 3
 fi
 case "$CUR_VERSION" in
-  ""|2.0.0|2.1.0|"$BEYIN_TARGET_VERSION") ;;
-  *) die "uyumsuz sürüm damgası: '$CUR_VERSION' (desteklenen: boş v1, 2.0.0, 2.1.0 veya $BEYIN_TARGET_VERSION)" ;;
+  ""|2.0.0|2.1.0|2.2.0|"$BEYIN_TARGET_VERSION") ;;
+  *) die "uyumsuz sürüm damgası: '$CUR_VERSION' (desteklenen: boş v1, 2.0.0, 2.1.0, 2.2.0 veya $BEYIN_TARGET_VERSION)" ;;
 esac
 
 NEED_RENAME=0

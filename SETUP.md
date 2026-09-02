@@ -1,4 +1,4 @@
-# SETUP.md v2.2: Activate this second brain (Claude Code or Codex runbook)
+# SETUP.md v2.3: Activate this second brain (Claude Code or Codex runbook)
 
 > You are Claude Code or Codex, run from inside a freshly cloned `avenoxbeyin` repo. The user wants their
 > own AI second brain, or wants to upgrade the one they already have. The scaffold lives in
@@ -84,8 +84,8 @@ Decide:
 | --- | --- |
 | `TARAMA TAMAM: 0 aday` | **MODE A, sıfırdan kurulum** (PHASE 0'a git) |
 | Aday var, `.beyin-version` yok | **MODE B, v1'den yükseltme** (PHASE U1'e git) |
-| Aday var, `.beyin-version` = `2.0.0` veya `2.1.0` | **MODE B**, v2.2 çoklu-harness yükseltmesi |
-| Aday var, `.beyin-version` = `2.2.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
+| Aday var, `.beyin-version` = `2.0.0`, `2.1.0` veya `2.2.0` | **MODE B**, v2.3 yükseltmesi |
+| Aday var, `.beyin-version` = `2.3.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
 | Aday var, `.beyin-version` başka bir değer | Kullanıcıya göster, ne yapılacağını sor |
 
 Tell the user which mode you picked and why, in one Turkish sentence. Never guess silently.
@@ -226,7 +226,7 @@ ls -l AGENTS.md .agents/skills .codex/hooks
 python3 -m json.tool .codex/hooks.json >/dev/null && echo "Codex kancaları ✓"
 python3 -m json.tool .agents/hooks.json >/dev/null && echo "Antigravity kancaları ✓"
 ls -d daily knowledge/concepts knowledge/connections
-cat .beyin-version         # 2.2.0
+cat .beyin-version         # 2.3.0
 ```
 
 ## PHASE 3: Personalize (substitute placeholders)
@@ -485,7 +485,7 @@ Ask only what `--stage check` actually asked for.
    Yes → pass `--confirm-rename`.
    No → **stop the upgrade here.** Say in Turkish that the vault stays on v1, nothing was changed
    and no version was stamped. Do not run `apply`. Do not write `.beyin-version`. A vault stamped
-   `2.2.0` whose memory injection cannot find the folder is worse than an honest older vault.
+   `2.3.0` whose memory injection cannot find the folder is worse than an honest older vault.
 
 2. **`settings.local.json` içindeki v1 kancaları.** If the check found any:
    > "Eski kurulumda kancalar `settings.local.json` içine yazılmış. v2 bunları `settings.json`
@@ -509,7 +509,7 @@ Pass only the confirmation flags the check asked for. Read the numbered output b
 | Çıkış kodu | Anlamı | Ne yapacaksın |
 | --- | --- | --- |
 | `0` | apply tamam, sürüm damgası HENÜZ yazılmadı | PHASE U4'e geç |
-| `3` | vault zaten `2.2.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
+| `3` | vault zaten `2.3.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
 | `10` | yeniden adlandırma onayı eksik | PHASE U2'ye dön |
 | `11` | yerel kanca temizliği onayı eksik | PHASE U2'ye dön |
 | `1` | sert hata, ekranda `HATA:` satırı var | DUR. Kullanıcıya oku, düzelt, tekrar çalıştır |

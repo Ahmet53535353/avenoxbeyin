@@ -52,6 +52,7 @@ FLUSH = load_module("beyin_flush_test", SOURCE_SCRIPTS / "flush.py")
 CODEX_RENDERER = load_module(
     "beyin_codex_renderer_test", SOURCE_SCRIPTS / "render_codex_hooks.py"
 )
+GRAF = load_module("beyin_graf_test", SOURCE_SCRIPTS / "graf_kontrol.py")
 
 
 class ScriptsTest(unittest.TestCase):
@@ -995,6 +996,87 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(compile_result.returncode, 0)
         self.assertEqual(self._stub_calls(), [])
         self.assertFalse((self.state / "health.json").exists())
+
+
+class GrafKontrolTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="beyin-graf-tests-")
+        self.vault = Path(self.temporary.name)
+        self.addCleanup(self.temporary.cleanup)
+
+    def write(self, rel: str, text: str) -> None:
+        path = self.vault / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_reports_broken_links_and_orphans(self) -> None:
+        self.write("a.md", "[[b]] ve [[yok-boyle]]")
+        self.write("b.md", "govde")
+        self.write("c.md", "kimse bana baglanmiyor")
+        total, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(total, 3)
+        self.assertEqual([target for _, target in broken], ["yok-boyle"])
+        self.assertEqual([str(o) for o in orphans], ["a.md", "c.md"])
+
+    def test_resolves_full_paths_headings_and_aliases(self) -> None:
+        # Tablo icindeki [[yol\|takma-ad]] kacisi ve [[not#baslik]] kirik sayilmamali.
+        self.write("alan/🏰 300-Projects/proje.md", "govde")
+        self.write(
+            "hub.md",
+            "[[🏰 300-Projects/proje]] [[proje#baslik]] "
+            "[[🏰 300-Projects/proje\\|takma]]",
+        )
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertNotIn(
+            "alan/🏰 300-Projects/proje.md", [str(o) for o in orphans]
+        )
+
+    def test_hook_injected_and_skipped_paths_are_not_orphans(self) -> None:
+        # Kanca ile enjekte edilen hafiza dosyalari ve muaf klasorler yetim sayilmaz.
+        self.write("🔮 850-Companion/Journal.md", "gunluk")
+        self.write("📋 Templates/Note.md", "sablon")
+        self.write("daily/2026-01-01.md", "log")
+        self.write("📦 900-Archive/eski.md", "arsiv")
+        total, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertEqual(orphans, [])
+        self.assertEqual(total, 3)  # 900-Archive hic taranmaz
+
+    def test_folder_and_external_targets_are_ignored(self) -> None:
+        self.write("hub.md", "[[🏰 300-Projects/]] [[https://ornek.com]]")
+        _, broken, _ = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+
+    def test_code_comments_and_inline_examples_do_not_create_edges(self) -> None:
+        self.write(
+            "hub.md",
+            "`[[inline-yok]]`\n```md\n[[fence-yok]]\n```\n%% [[yorum-yok]] %%",
+        )
+        _, broken, _ = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+
+    def test_attachment_casefold_and_relative_targets_resolve(self) -> None:
+        self.write(
+            "alt/hub.md",
+            "![[Görsel.PNG]] [[../Notlar/KARAR]]",
+        )
+        attachment = self.vault / "Görsel.PNG"
+        attachment.write_bytes(b"png placeholder")
+        self.write("Notlar/Karar.md", "govde")
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertNotIn("Notlar/Karar.md", [str(item) for item in orphans])
+
+    def test_duplicate_basenames_do_not_create_false_orphans(self) -> None:
+        self.write("hub.md", "[[karar]]")
+        self.write("bir/karar.md", "ilk")
+        self.write("iki/karar.md", "ikinci")
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        orphan_names = [str(item) for item in orphans]
+        self.assertNotIn("bir/karar.md", orphan_names)
+        self.assertNotIn("iki/karar.md", orphan_names)
 
 
 if __name__ == "__main__":

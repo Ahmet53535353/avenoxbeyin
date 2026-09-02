@@ -37,7 +37,7 @@ nerede olduğunu ve hangi kararın alındığını hatırlar.
 
 ## OpenCode durumu
 
-v2.2'nin otomatik başlangıç/flush adaptörleri Claude Code, Codex ve Google Antigravity içindir.
+v2.3'ün otomatik başlangıç/flush adaptörleri Claude Code, Codex ve Google Antigravity içindir.
 OpenCode için resmi bir hook adaptörü şu anda yoktur. OpenCode vault Markdown'ını normal dosya gibi
 okuyabilir; fakat bir OpenCode oturumunun kendiliğinden `daily/` loguna yazıldığını veya başlangıçta
 hafızayı otomatik aldığını varsayma. Böyle bir destek eklenene kadar OpenCode çıktısının kalıcı
