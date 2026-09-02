@@ -90,9 +90,10 @@ python "%~dp0claude_stub.py" %*
     Assert 'kurulum_sifir_ile_biter' ($installExit -eq 0) "cikis kodu: $installExit"
 
     foreach ($p in '.claude\scripts\flush.py', '.claude\scripts\compile.py',
+        '.claude\scripts\antigravity_hooks.py', '.claude\scripts\render_antigravity_hooks.py',
         '.claude\scripts\_portalock.py', '.claude\hooks\lib.ps1',
         '.claude\hooks\session-end.ps1', '.claude\scripts\.state',
-        '.claude\settings.json', 'daily', 'knowledge\index.md') {
+        '.claude\settings.json', '.agents\hooks.json', 'daily', 'knowledge\index.md') {
         Assert "kuruldu_$($p -replace '[\\.]', '_')" (Test-Path -LiteralPath (Join-Path $vault $p)) "eksik: $p"
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flush a Claude Code or Codex transcript into the vault's daily log safely."""
+"""Flush a Claude Code, Codex, or Antigravity transcript safely."""
 
 # Windows portu: upstream "import fcntl" ile baslar ve Windows'ta modul
 # yuklenirken olur. Kilitleme _portalock uzerinden yapilir; davranis POSIX'te
@@ -116,6 +116,14 @@ def load_hook_input(path: Path) -> dict[str, Any]:
 
 
 def _message_parts(record: dict[str, Any]) -> tuple[str | None, Any]:
+    # Google Antigravity transcript format. Hooks expose this JSONL through
+    # transcriptPath; reasoning/tool-only records deliberately carry no role.
+    record_type = record.get("type")
+    if record_type == "USER_INPUT":
+        return "user", record.get("content")
+    if record_type == "PLANNER_RESPONSE":
+        return "assistant", record.get("content")
+
     # Codex rollout format: ~/.codex/sessions/**/rollout-*.jsonl.  The
     # user-facing turns are event_msg records; response/tool records are
     # intentionally ignored so a hook does not duplicate or ingest internals.
@@ -424,6 +432,62 @@ def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
     return result.stdout.strip(), None
 
 
+def _run_antigravity(
+    prompt: str,
+    vault_root: Path,
+) -> tuple[str | None, str | None]:
+    agy = shutil.which("agy")
+    if agy is None:
+        return None, "antigravity-cli-missing"
+
+    environment = os.environ.copy()
+    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    try:
+        with tempfile.TemporaryDirectory(prefix="beyin-flush-") as temporary:
+            temporary_path = Path(temporary).resolve()
+            try:
+                inside_vault = (
+                    os.path.commonpath([temporary_path, vault_root.resolve()])
+                    == str(vault_root.resolve())
+                )
+            except ValueError:
+                inside_vault = False
+            if inside_vault:
+                return None, "temporary-directory-inside-vault"
+            result = subprocess.run(
+                [
+                    agy,
+                    "-p",
+                    prompt,
+                    "--print-timeout",
+                    "4m",
+                    "--sandbox",
+                ],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                cwd=temporary_path,
+                env=environment,
+                timeout=270,
+                check=False,
+            )
+    except subprocess.TimeoutExpired:
+        return None, "antigravity-timeout"
+    except OSError:
+        return None, "antigravity-exec-error"
+
+    if result.returncode != 0:
+        return None, f"antigravity-exit-{result.returncode}"
+    return result.stdout.strip(), None
+
+
+def _run_model(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
+    if os.environ.get("BEYIN_MODEL_RUNNER") == "antigravity":
+        return _run_antigravity(prompt, vault_root)
+    return _run_claude(prompt, vault_root)
+
+
 def _summarize_transcript(
     transcript: str,
     vault_root: Path,
@@ -431,7 +495,7 @@ def _summarize_transcript(
     """Generate one valid summary, retrying a schema mismatch exactly once."""
     warnings: list[str] = []
     for attempt in range(2):
-        summary, error = _run_claude(
+        summary, error = _run_model(
             build_flush_prompt(transcript, schema_retry=attempt > 0),
             vault_root,
         )

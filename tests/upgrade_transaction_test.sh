@@ -283,7 +283,7 @@ test_stamp_only_finalize() {
   assert_eq 0 "$RUN_STATUS" "finalize başarısız" || return 1
   assert_file "$vault/.beyin-version" || return 1
   stamp=$(sed -n '1p' "$vault/.beyin-version")
-  assert_eq 2.1.0 "$stamp" "sürüm damgası yanlış" || return 1
+  assert_eq 2.2.0 "$stamp" "sürüm damgası yanlış" || return 1
 }
 
 test_fresh_shell_chain() {
@@ -307,7 +307,7 @@ test_fresh_shell_chain() {
     cmp -s "$TEST_ROOT/template/.claude/hooks/$hook" "$vault/.claude/hooks/$hook" \
       || { diag "v2 kancası kaynakla aynı değil: $hook"; return 1; }
   done
-  for script in flush.py compile.py _portalock.py render_codex_hooks.py; do
+  for script in flush.py compile.py _portalock.py render_codex_hooks.py render_antigravity_hooks.py antigravity_hooks.py; do
     assert_file "$vault/.claude/scripts/$script" || return 1
     cmp -s "$TEST_ROOT/template/.claude/scripts/$script" "$vault/.claude/scripts/$script" \
       || { diag "v2 scripti kaynakla aynı değil: $script"; return 1; }
@@ -320,7 +320,9 @@ test_fresh_shell_chain() {
     || { diag ".codex/hooks ortak store değil"; return 1; }
   python3 -m json.tool "$vault/.codex/hooks.json" >/dev/null \
     || { diag ".codex/hooks.json geçerli değil"; return 1; }
-  assert_eq 2.1.0 "$(sed -n '1p' "$vault/.beyin-version")" "taze shell zinciri damgası" || return 1
+  python3 -m json.tool "$vault/.agents/hooks.json" >/dev/null \
+    || { diag ".agents/hooks.json geçerli değil"; return 1; }
+  assert_eq 2.2.0 "$(sed -n '1p' "$vault/.beyin-version")" "taze shell zinciri damgası" || return 1
 }
 
 test_apply_failure_no_stamp() {
@@ -354,12 +356,12 @@ test_already_current() {
   case_dir=$(new_case)
   vault="$case_dir/vault"
   make_v1_vault "$vault" --clean-local
-  printf '2.1.0\n' > "$vault/.beyin-version"
+  printf '2.2.0\n' > "$vault/.beyin-version"
   before=$(tree_digest "$vault")
   run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
-  assert_eq 3 "$RUN_STATUS" "zaten v2.1 vault apply çıkışı" || return 1
+  assert_eq 3 "$RUN_STATUS" "zaten v2.2 vault apply çıkışı" || return 1
   after=$(tree_digest "$vault")
-  assert_eq "$before" "$after" "zaten v2.1 vault apply ile değişti" || return 1
+  assert_eq "$before" "$after" "zaten v2.2 vault apply ile değişti" || return 1
 }
 
 test_v2_0_is_upgradeable() {
@@ -369,9 +371,25 @@ test_v2_0_is_upgradeable() {
   make_v1_vault "$vault" --clean-local
   printf '2.0.0\n' > "$vault/.beyin-version"
   run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
-  assert_eq 0 "$RUN_STATUS" "v2.0 -> v2.1 apply başarısız" || return 1
+  assert_eq 0 "$RUN_STATUS" "v2.0 -> v2.2 apply başarısız" || return 1
   assert_file "$vault/.codex/hooks.json" || return 1
   assert_no_file "$vault/.beyin-version.tmp" || return 1
+}
+
+test_v2_1_is_upgradeable() {
+  local case_dir vault
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+  printf '2.1.0\n' > "$vault/.beyin-version"
+  run_upgrade "$case_dir" "$case_dir/apply.out" --vault "$vault" --stage apply
+  assert_eq 0 "$RUN_STATUS" "v2.1 -> v2.2 apply başarısız" || return 1
+  run_upgrade "$case_dir" "$case_dir/finalize.out" --vault "$vault" --stage finalize
+  assert_eq 0 "$RUN_STATUS" "v2.1 -> v2.2 finalize başarısız" || return 1
+  assert_eq 2.2.0 "$(sed -n '1p' "$vault/.beyin-version")" "v2.1 yükseltme damgası" || return 1
+  assert_file "$vault/.agents/hooks.json" || return 1
+  assert_file "$vault/.claude/scripts/antigravity_hooks.py" || return 1
 }
 
 test_no_git_verified_snapshot() {
@@ -584,8 +602,9 @@ run_case "sürüm damgasını apply değil yalnız finalize yazar" test_stamp_on
 run_case "check apply finalize ayrı taze shell süreçlerinde tamamlanır" test_fresh_shell_chain
 run_case "apply kopyalama hatasında başarısız olur ve damga yazmaz" test_apply_failure_no_stamp
 run_case "finalize kapısı bozulunca başarısız olur ve damga yazmaz" test_finalize_failure_no_stamp
-run_case "zaten 2.1.0 damgalı vault apply için 3 döndürür" test_already_current
-run_case "2.0.0 damgalı vault harness-neutral v2.1'e yükseltilebilir" test_v2_0_is_upgradeable
+run_case "zaten 2.2.0 damgalı vault apply için 3 döndürür" test_already_current
+run_case "2.0.0 damgalı vault v2.2'ye yükseltilebilir" test_v2_0_is_upgradeable
+run_case "2.1.0 damgalı vault Antigravity destekli v2.2'ye yükseltilebilir" test_v2_1_is_upgradeable
 run_case "git olmayan vault doğrulanmış anlık görüntü bırakmadan ilerlemiyor" test_no_git_verified_snapshot
 run_case "git ikilisi yokken harici doğrulanmış yedek dalı gerçekten çalışıyor" test_no_git_binary_uses_external_backup
 run_case "yeniden adlandırma onayı yoksa apply atomik olarak 10 döndürür" test_rename_confirmation_is_atomic
