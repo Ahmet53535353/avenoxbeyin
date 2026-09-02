@@ -193,6 +193,10 @@ Masaüstü kısayolu macOS'ta `osacompile` ve AppKit kullanır, ikisi de Linux't
 kendisi düz Markdown, yani her yerde açılır; kurulum akışının tamamı için doğrulanmış tek platform
 şu an macOS.
 
+Kod reposu, video dosyaları ve `🏰 300-Projects/` arasındaki sınır için
+[`docs/PROJECT-WORKFLOW.md`](docs/PROJECT-WORKFLOW.md) rehberine bak. OpenCode'un mevcut destek
+sınırı da orada açıkça yazıyor.
+
 ## Bir şey ters giderse
 
 Vault klasöründe kullandığın agent'ı açıp `beyin doktor` yaz. Kancalar, scriptler, python3, model CLI,
