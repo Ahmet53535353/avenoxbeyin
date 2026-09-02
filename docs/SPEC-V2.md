@@ -21,6 +21,12 @@ three seconds and only detaches work. Users approve changed project hook hashes 
 `/hooks`; the installer never edits the global trust store. Codex rollout `event_msg` user/agent
 records feed the same `flush.py` parser as Claude transcripts.
 
+### v2.3 graph-integrity addendum
+
+v2.3 adds an Obsidian-aware graph scanner for broken wikilinks and advisory orphan-note
+reporting. Existing v2.2 vaults are upgradeable so the new script cannot be skipped by an
+already-current version stamp.
+
 Principles (binding):
 1. **Zero cost to the user.** Everything runs on the user's existing Claude subscription via `claude -p`. No API keys required anywhere. No paid services. Optional things stay optional and free.
 2. **Zero dependencies.** bash + python3 stdlib only. No pip, no uv, no npm. If python3 is missing, degrade loudly, never silently.
@@ -40,7 +46,7 @@ avenoxbeyin/
 │   └── beyin-v2.md                (new public spec for avenox.lol/beyin.md — lane D)
 └── template/
     ├── CLAUDE.md                  (v2 router-style — lane O1)
-    ├── .beyin-version             (single line: `2.2.0` — multi-harness release)
+    ├── .beyin-version             (single line: `2.3.0` — graph-integrity release)
     ├── .gitignore                 (v2 — lane D; see §2.4)
     ├── .claude/
     │   ├── settings.json          (v2 hook wiring — lane C2)
@@ -213,7 +219,7 @@ Same self-contained structure as v1's public spec but v2: FAST PATH = clone repo
 
 ### 6.3 README.md v2
 Rewrite: what it is (2 paragraphs, thesis "hafıza rica değil mekanizma"), v1→v2 comparison table, quickstart (3 commands), upgrade note, architecture ASCII diagram of the flush→daily→compile pipeline, cost honesty paragraph (same as 6.2), credits: "Bilgi derleme mimarisi Andrej Karpathy'nin LLM bilgi tabanı desenine dayanır" with gist link. MIT.
-### 6.4 `.beyin-version`: file containing `2.2.0`.
+### 6.4 `.beyin-version`: file containing `2.3.0`.
 
 ## 7. Integration gates (run by the architect after lanes land)
 1. `bash tests/hooks_test.sh` green.

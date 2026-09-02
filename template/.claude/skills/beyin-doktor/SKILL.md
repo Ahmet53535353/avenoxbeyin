@@ -158,7 +158,7 @@ Düzeltme: repo yoksa `git init` ve ilk commit. Birikme varsa commit at.
 if [ -f .beyin-version ]; then echo "surum: $(head -1 .beyin-version)"; else echo "surum: DOSYA YOK, v1 vault"; fi
 ```
 
-🟢 `2.2.0`. 🟡 `2.1.0`, `2.0.0` veya dosya yok: çoklu-harness yükseltmesi yapılabilir.
+🟢 `2.3.0`. 🟡 `2.2.0`, `2.1.0`, `2.0.0` veya dosya yok: yükseltme yapılabilir.
 Düzeltme: SETUP.md içindeki yükseltme yolunu (B modu) uygula. Yükseltme mevcut hafıza
 dosyalarına dokunmaz, sadece eksik parçaları ekler.
 
@@ -232,8 +232,8 @@ bir adresi gösterir. İkisini de başka hiçbir kontrol yakalamıyor.
 
 🟢 kırık bağlantı 0. 🟡 kırık bağlantı 1–20. 🔴 kırık bağlantı 20 üstü.
 Yetim sayısı tek başına 🔴 değildir: taslak, arşivlik ve tek seferlik notlar doğal olarak
-yetimdir. Asıl bakılacak yer `🔮 850-Companion` — hafıza dosyalarından biri yetim çıkarsa
-süreklilik zinciri kopmuş demektir.
+yetimdir. Kanca tarafından her oturumda enjekte edilen çekirdek dosyalar tarayıcıda açıkça
+muaf tutulur; kalan sonuçlar erişim kolaylığı için danışmanlık sinyalidir.
 Düzeltme: `--tam` ile listeyi aç. Kırık bağlantı için ya hedef notu oluştur ya bağlantıyı
 düzelt; hedef bilerek yoksa (belgede örnek olarak geçen `[[wikilink]]` gibi) dokunma.
 Yetim not için ilgili üs nottan veya `Dashboard.md`'den bağlantı ver.
@@ -258,7 +258,7 @@ Tüm kontroller bittikten sonra tek tablo bas:
 | Bilgi indeksi | 🟢 | 42 satır |
 | iCloud çakışmaları | 🟢 | temiz |
 | Git | 🟢 | repo var, 3 dosya kaydedilmemiş |
-| Sürüm | 🟢 | 2.2.0 |
+| Sürüm | 🟢 | 2.3.0 |
 | Kurallar | 🟢 | var, 24 satır |
 | Çift etkin kanca | 🔴 | SessionEnd 2 kez bağlı |
 | Sır yedeği artığı | 🟢 | temiz |

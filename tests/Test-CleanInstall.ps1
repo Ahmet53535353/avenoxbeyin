@@ -91,6 +91,7 @@ python "%~dp0claude_stub.py" %*
 
     foreach ($p in '.claude\scripts\flush.py', '.claude\scripts\compile.py',
         '.claude\scripts\antigravity_hooks.py', '.claude\scripts\render_antigravity_hooks.py',
+        '.claude\scripts\graf_kontrol.py',
         '.claude\scripts\_portalock.py', '.claude\hooks\lib.ps1',
         '.claude\hooks\session-end.ps1', '.claude\scripts\.state',
         '.claude\settings.json', '.agents\hooks.json', 'daily', 'knowledge\index.md') {

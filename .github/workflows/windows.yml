@@ -67,3 +67,16 @@ jobs:
       - name: Antigravity adaptor testleri
         shell: pwsh
         run: python tests/antigravity_test.py
+
+  graph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: POSIX motor ve graf testleri
+        run: python3 tests/scripts_test.py

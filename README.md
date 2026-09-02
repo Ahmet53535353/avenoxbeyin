@@ -1,4 +1,4 @@
-# 🧠 avenoxbeyin v2.2: hatırlamayı unutmayan ikinci beyin
+# 🧠 avenoxbeyin v2.3: hatırlamayı unutmayan ikinci beyin
 
 [Obsidian](https://obsidian.md) + Claude Code, Codex veya Google Antigravity üstünde çalışan,
 açık kaynak bir **ikinci beyin**. Yerel bir Markdown vault, kalıcı hafıza, sıfır bağımlılık,
@@ -76,7 +76,7 @@ Ne yapıldığı, hangi Windows tuzaklarının ölçüldüğü ve nelerin iddia 
 Kapsam dışı: v1 → v2 yükseltme, WSL'den taşınma, PowerShell 5.1 ile çalıştırma.
 macOS ve Linux yolları değişmedi.
 
-### Zaten v1 veya v2.0 beynin varsa
+### Zaten v1, v2.0, v2.1 veya v2.2 beynin varsa
 
 Aynı komut yeter. `SETUP.md` önce mevcut bir beyin arar, bulursa yükseltme moduna geçer ve işi
 tek bir script'e devreder: `scripts/upgrade.sh`. Yükseltme **sadece ekler**: mevcut hafıza
@@ -98,7 +98,7 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
 
 ---
 
-## v1/v2.0/v2.1 → v2.2
+## v1/v2.0/v2.1/v2.2 → v2.3
 
 | | v1 | v2 |
 | --- | --- | --- |
