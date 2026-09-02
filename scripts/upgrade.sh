@@ -21,11 +21,12 @@
 #             11 needs --confirm-local-hooks
 set -euo pipefail
 
-BEYIN_TARGET_VERSION="2.1.0"
-BEYIN_SCRIPT_VERSION="2.1.0"
+BEYIN_TARGET_VERSION="2.2.0"
+BEYIN_SCRIPT_VERSION="2.2.0"
 BEYIN_MEMORY_DIR_NAME="🔮 850-Companion"
 BEYIN_HOOK_FILES="lib.sh session-start.sh prompt-counter.sh session-end.sh pre-compact.sh"
-BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py"
+BEYIN_SCRIPT_FILES="flush.py compile.py _portalock.py render_codex_hooks.py model_runner.py config.json _platform.py bridge.py read_transcript.py lifecycle.py runtime_platform.py"
+BEYIN_PLUGIN_FILES="opencode-brain/index.js opencode-brain/package.json"
 BEYIN_SKILL_DIRS="beyin-doktor gecmis-import"
 BEYIN_BACKUP_ROOT="${BEYIN_BACKUP_ROOT:-$HOME/.avenoxbeyin-yedek}"
 
@@ -315,11 +316,11 @@ if [ "$STAGE" = "apply" ]; then
   mkdir -p "$STATE_DIR"
   : > "$MANIFEST"
 
-  step "1/9 .gitignore (anlık görüntüden ÖNCE, sır sahnelenmesin diye)"
+  step "1/10 .gitignore (anlık görüntüden ÖNCE, sır sahnelenmesin diye)"
   ensure_gitignore
   untrack_ignored_secrets
 
-  step "2/9 anlık görüntü (doğrulanmış)"
+  step "2/10 anlık görüntü (doğrulanmış)"
   SNAP_OK=0
   if command -v git >/dev/null 2>&1; then
     if [ ! -d "$V/.git" ]; then
@@ -357,7 +358,7 @@ if [ "$STAGE" = "apply" ]; then
     say "doğrulanmış yedek: $COPY_DST ($DST_N öğe)"
   fi
 
-  step "3/9 hafıza klasörü adı"
+  step "3/10 hafıza klasörü adı"
   if [ "$NEED_RENAME" = "1" ]; then
     [ ! -e "$V/$BEYIN_MEMORY_DIR_NAME" ] || die "hedef klasör zaten var: $BEYIN_MEMORY_DIR_NAME. Elle çözülmeli."
     BEFORE_N=$(find "$MEM_DIR" -mindepth 1 | wc -l | tr -d ' ')
@@ -377,7 +378,7 @@ if [ "$STAGE" = "apply" ]; then
     say "zaten doğru: $MEM_NAME"
   fi
 
-  step "4/9 klasörler"
+  step "4/10 klasörler"
   mkdir -p "$V/daily" "$V/knowledge/concepts" "$V/knowledge/connections" \
            "$V/.claude/scripts/.state" "$V/.claude/skills" "$V/.claude/hooks"
   for K in "daily/.gitkeep" "knowledge/concepts/.gitkeep" "knowledge/connections/.gitkeep" \
@@ -386,7 +387,7 @@ if [ "$STAGE" = "apply" ]; then
   done
   say "klasörler ve .gitkeep dosyaları yerinde"
 
-  step "5/9 scriptler ve skill'ler (kod, üzerine yazılır)"
+  step "5/10 scriptler ve skill'ler (kod, üzerine yazılır)"
   for F in $BEYIN_SCRIPT_FILES; do
     copy_file "$REPO/template/.claude/scripts/$F" "$V/.claude/scripts/$F" ".claude/scripts/$F"
     say "  .claude/scripts/$F"
@@ -397,7 +398,22 @@ if [ "$STAGE" = "apply" ]; then
     say "  .claude/skills/$S/SKILL.md"
   done
 
-  step "6/9 tohum dosyaları (sadece yoksa)"
+  step "5b/10 OpenCode plugin (varsa, üzerine yazılmaz)"
+  if [ -d "$REPO/plugins/opencode-brain" ]; then
+    PLUGIN_DIR="$V/plugins/opencode-brain"
+    mkdir -p "$PLUGIN_DIR"
+    for F in $BEYIN_PLUGIN_FILES; do
+      SRC="$REPO/plugins/$F"
+      DST="$V/plugins/$F"
+      if [ -f "$SRC" ]; then
+        cp "$SRC" "$DST" || die "kopyalanamadı: $SRC -> $DST"
+        record "plugins/$F"
+        say "  plugins/$F"
+      fi
+    done
+  fi
+
+  step "6/10 tohum dosyaları (sadece yoksa)"
   SEEDS_TMP=$(mktemp)
   printf '%s\n' "knowledge/index.md" "knowledge/log.md" > "$SEEDS_TMP"
   printf '%s\n' "$BEYIN_MEMORY_DIR_NAME/Kurallar.md" >> "$SEEDS_TMP"
@@ -411,7 +427,7 @@ if [ "$STAGE" = "apply" ]; then
   done < "$SEEDS_TMP"
   rm -f "$SEEDS_TMP"
 
-  step "7/9 kancalar (kod, üzerine yazılır)"
+  step "7/10 kancalar (kod, üzerine yazılır)"
   for H in $BEYIN_HOOK_FILES; do
     copy_file "$REPO/template/.claude/hooks/$H" "$V/.claude/hooks/$H" ".claude/hooks/$H"
     chmod +x "$V/.claude/hooks/$H" || die "chmod +x başarısız: $H"
@@ -419,7 +435,7 @@ if [ "$STAGE" = "apply" ]; then
     say "  $H (çalıştırılabilir, sözdizimi ✓)"
   done
 
-  step "7b/9 Claude + Codex ortak store ve Codex kanca kaydı"
+  step "7b/10 Claude + Codex ortak store ve Codex kanca kaydı"
   mkdir -p "$V/.agents" "$V/.codex"
 
   if [ ! -e "$V/AGENTS.md" ] && [ ! -L "$V/AGENTS.md" ]; then
@@ -460,7 +476,7 @@ if [ "$STAGE" = "apply" ]; then
   say "  .codex/hooks -> .claude/hooks"
   say "  .codex/hooks.json (mutlak yollar, SessionEnd 3s)"
 
-  step "8/9 settings.json kanca kaydı (birleştir, tekrar çalıştırılabilir)"
+  step "8/10 settings.json kanca kaydı (birleştir, tekrar çalıştırılabilir)"
   python3 - "$V" "$REPO" <<'PY' || die "settings.json birleştirme başarısız"
 import json, os, sys, tempfile
 vault, repo = sys.argv[1], sys.argv[2]
@@ -505,7 +521,7 @@ print("eklenen kanca girdisi:", added)
 PY
   record ".claude/settings.json"
 
-  step "9/9 settings.local.json geçişi"
+  step "9/10 settings.local.json geçişi"
   if [ "$LOCAL_MINE" = "0" ]; then
     say "settings.local.json içinde v1 beyin kancası yok, dokunulmadı"
   else

@@ -6,16 +6,28 @@ Status: BUILD CONTRACT. Implementation lanes implement EXACTLY this. Where this 
 
 v1 shipped a folder skeleton + 3 hooks + memory files whose upkeep depended entirely on the LLM remembering to write. v2's thesis: **memory must be a mechanism, not a discipline.** New in v2: automatic session flush → daily logs → once-daily knowledge compilation, pre-compaction capture, a health doctor, a history-import path, and an in-place upgrade for existing v1 vaults.
 
-### v2.1 harness-neutral addendum
+### v2.2 harness-neutral addendum
 
-Claude Code remains the background summarizer/compiler runtime, but the operator surface may be
-Claude Code or Codex. On POSIX, `CLAUDE.md` is the canonical router and `AGENTS.md` points to it;
+Claude Code, Codex, Google Antigravity, and OpenCode all serve as the background summarizer/compiler
+runtime. On POSIX, `CLAUDE.md` is the canonical router and `AGENTS.md` points to it;
 `.claude/skills` is canonical and `.agents/skills` points to it; `.claude/hooks` is canonical and
 `.codex/hooks` points to it. `.codex/hooks.json` is rendered at install/upgrade time with absolute
 paths because Codex sets neither project-directory environment variable. Codex `SessionEnd` is
 three seconds and only detaches work. Users approve changed project hook hashes themselves via
 `/hooks`; the installer never edits the global trust store. Codex rollout `event_msg` user/agent
 records feed the same `flush.py` parser as Claude transcripts.
+
+**v2.2 security hardening:** Reparse-point (symlink + Windows junction) detection in `flush.py`
+and `compile.py` via `_platform._is_link_or_reparse()`. Transcript-path validation rejects symlink
+attacks. Stage isolation ensures the model never writes directly to the vault — promotion only
+happens after manifest diff validation. Provider abstraction in `model_runner.py` enables all four
+harnesses with graceful fallback. `encoding="utf-8", errors="replace"` on all `subprocess.run`
+calls prevents locale-dependent encoding crashes on Windows.
+
+OpenCode integration uses the `plugins/opencode-brain/` Node.js plugin, which writes
+transcripts to `${HOME}/.opencode/.state/beyin/`. `install_opencode.py` copies the plugin to
+`~/.config/opencode/plugins/` and registers it in `opencode.jsonc`. Bridge hooks (`bridge.py`,
+`read_transcript.py`) are copied to `.beyin/hooks/` alongside the vault.
 
 Principles (binding):
 1. **Zero cost to the user.** Everything runs on the user's existing Claude subscription via `claude -p`. No API keys required anywhere. No paid services. Optional things stay optional and free.
@@ -36,7 +48,7 @@ avenoxbeyin/
 │   └── beyin-v2.md                (new public spec for avenox.lol/beyin.md — lane D)
 └── template/
     ├── CLAUDE.md                  (v2 router-style — lane O1)
-    ├── .beyin-version             (single line: `2.1.0` — harness-neutral release)
+    ├── .beyin-version             (single line: `2.2.0` — OpenCode + reparse-point hardening)
     ├── .gitignore                 (v2 — lane D; see §2.4)
     ├── .claude/
     │   ├── settings.json          (v2 hook wiring — lane C2)

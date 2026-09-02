@@ -268,15 +268,11 @@ def _path_within(path: Path, root: Path) -> bool:
 
 
 def _check_source(path: Path, vault_root: Path, directory: bool) -> None:
-    source_stat = path.lstat()
-    if stat.S_ISLNK(source_stat.st_mode):
-        raise PolicyError(f"source-symlink:{path.relative_to(vault_root)}")
-    expected = stat.S_ISDIR if directory else stat.S_ISREG
-    if not expected(source_stat.st_mode):
-        raise PolicyError(f"source-type:{path.relative_to(vault_root)}")
-    resolved = path.resolve(strict=True)
-    if not _path_within(resolved, vault_root.resolve(strict=True)):
-        raise PolicyError(f"source-escape:{path.name}")
+    from _platform import check_source as _platform_check_source
+    try:
+        _platform_check_source(path, vault_root, directory)
+    except ValueError as exc:
+        raise PolicyError(str(exc))
 
 
 def _copy_source_file(
@@ -549,46 +545,17 @@ def _promote_changes(
         _atomic_copy(source, destination)
 
 
-def _run_claude(prompt: str, stage: Path) -> str | None:
-    claude = shutil.which("claude")
-    if claude is None:
-        return "claude-cli-missing"
-
-    environment = os.environ.copy()
-    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
-    try:
-        result = subprocess.run(
-            [
-                claude,
-                "-p",
-                "--model",
-                "sonnet",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "Read,Write,Edit,Glob,Grep",
-                "--permission-mode",
-                "acceptEdits",
-                "--allowedTools",
-                "Read,Write,Edit,Glob,Grep",
-            ],
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            cwd=stage,
-            env=environment,
-            timeout=900,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return "claude-timeout"
-    except OSError:
-        return "claude-exec-error"
-    if result.returncode != 0:
-        return f"claude-exit-{result.returncode}"
+def _run_model(prompt: str, stage: Path) -> str | None:
+    import model_runner
+    stdout, error, provider = model_runner.run_model(
+        prompt=prompt,
+        cwd=stage,
+        mode="workspace",
+        timeout=900,
+        preferred=None,
+    )
+    if error is not None:
+        return error
     return None
 
 
@@ -628,7 +595,7 @@ def _compile_one(
             daily_body,
             timestamp,
         )
-        error = _run_claude(prompt, stage)
+        error = _run_model(prompt, stage)
         if error is not None:
             return error, error
         if _sha256(daily_path) != expected_digest:

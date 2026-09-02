@@ -102,6 +102,9 @@ class ScriptsTest(unittest.TestCase):
         shutil.copy2(SOURCE_SCRIPTS / "compile.py", self.scripts / "compile.py")
         # Gerçek dağıtım üç dosyadır: motor iki script + portable kilit modülü.
         shutil.copy2(SOURCE_SCRIPTS / "_portalock.py", self.scripts / "_portalock.py")
+        shutil.copy2(SOURCE_SCRIPTS / "model_runner.py", self.scripts / "model_runner.py")
+        shutil.copy2(SOURCE_SCRIPTS / "config.json", self.scripts / "config.json")
+        shutil.copy2(SOURCE_SCRIPTS / "_platform.py", self.scripts / "_platform.py")
         (self.knowledge / "index.md").write_text(
             "# Bilgi İndeksi\n", encoding="utf-8"
         )
@@ -912,71 +915,54 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertFalse((self.state / "health.json").exists())
 
     def test_model_subprocess_encoding_is_locale_independent(self) -> None:
-        compile_module = load_module(
-            f"beyin_compile_encoding_{uuid.uuid4().hex}",
-            self.scripts / "compile.py",
-        )
+        import model_runner
         prompt = "ş"
         expected_bytes = prompt.encode("utf-8")
 
-        cases = [
-            (
-                "flush",
-                FLUSH,
-                lambda: FLUSH._run_claude(prompt, self.vault),
-            ),
-            (
-                "compile",
-                compile_module,
-                lambda: compile_module._run_claude(prompt, self.root),
-            ),
-        ]
+        observed = []
 
-        for name, module, invoke in cases:
-            with self.subTest(name=name):
-                observed = []
+        def fake_run(command, **kwargs):
+            encoding = kwargs.get("encoding") or "cp1252"
+            errors = kwargs.get("errors") or "strict"
+            sent = kwargs["input"].encode(encoding, errors)
+            observed.append(
+                {
+                    "encoding": kwargs.get("encoding"),
+                    "errors": kwargs.get("errors"),
+                    "sent": sent,
+                }
+            )
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="FLUSH_BOS",
+                stderr="",
+            )
 
-                def fake_run(command, **kwargs):
-                    encoding = kwargs.get("encoding") or "cp1252"
-                    errors = kwargs.get("errors") or "strict"
-                    sent = kwargs["input"].encode(encoding, errors)
-                    observed.append(
-                        {
-                            "encoding": kwargs.get("encoding"),
-                            "errors": kwargs.get("errors"),
-                            "sent": sent,
-                        }
-                    )
-                    return subprocess.CompletedProcess(
-                        command,
-                        0,
-                        stdout="FLUSH_BOS",
-                        stderr="",
-                    )
+        with mock.patch.object(
+            model_runner.subprocess,
+            "run",
+            side_effect=fake_run,
+        ), mock.patch.object(
+            model_runner.shutil,
+            "which",
+            return_value="claude",
+        ):
+            stdout, error, provider = model_runner.run_model(
+                prompt=prompt,
+                cwd=self.vault,
+                mode="text",
+                timeout=240,
+                preferred=None,
+            )
 
-                with (
-                    mock.patch.object(
-                        module.shutil,
-                        "which",
-                        return_value="claude",
-                    ),
-                    mock.patch.object(
-                        module.subprocess,
-                        "run",
-                        side_effect=fake_run,
-                    ),
-                ):
-                    result = invoke()
-
-                self.assertEqual(len(observed), 1)
-                self.assertEqual(observed[0]["encoding"], "utf-8")
-                self.assertEqual(observed[0]["errors"], "replace")
-                self.assertEqual(observed[0]["sent"], expected_bytes)
-
-                if name == "flush":
-                    self.assertEqual(result, ("FLUSH_BOS", None))
-                else:
-                    self.assertIsNone(result)
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0]["encoding"], "utf-8")
+        self.assertEqual(observed[0]["errors"], "replace")
+        self.assertEqual(observed[0]["sent"], expected_bytes)
+        self.assertEqual(stdout, "FLUSH_BOS")
+        self.assertIsNone(error)
+        self.assertEqual(provider, "claude")
 
 
 if __name__ == "__main__":

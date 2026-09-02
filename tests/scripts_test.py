@@ -67,6 +67,9 @@ class ScriptsTest(unittest.TestCase):
         shutil.copy2(SOURCE_SCRIPTS / "flush.py", self.scripts / "flush.py")
         shutil.copy2(SOURCE_SCRIPTS / "compile.py", self.scripts / "compile.py")
         shutil.copy2(SOURCE_SCRIPTS / "_portalock.py", self.scripts / "_portalock.py")
+        shutil.copy2(SOURCE_SCRIPTS / "model_runner.py", self.scripts / "model_runner.py")
+        shutil.copy2(SOURCE_SCRIPTS / "config.json", self.scripts / "config.json")
+        shutil.copy2(SOURCE_SCRIPTS / "_platform.py", self.scripts / "_platform.py")
         (self.knowledge / "index.md").write_text(
             "# Bilgi İndeksi\n", encoding="utf-8"
         )
@@ -126,6 +129,17 @@ if is_compile:
     elif action == "symlink":
         target = Path("knowledge/concepts/escape.md")
         target.symlink_to("../../daily/input.md")
+    elif action == "type_change":
+        concepts_dir = Path("knowledge/concepts")
+        concepts_dir.mkdir(exist_ok=True)
+        file_to_dir = concepts_dir / "type-test.md"
+        if file_to_dir.exists():
+            if file_to_dir.is_file():
+                import shutil
+                shutil.rmtree(file_to_dir)
+                file_to_dir.mkdir()
+        else:
+            file_to_dir.mkdir()
 else:
     output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
     if output:
@@ -908,6 +922,69 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(compile_result.returncode, 0)
         self.assertEqual(self._stub_calls(), [])
         self.assertFalse((self.state / "health.json").exists())
+
+    def test_compile_prepare_stage_outside_vault(self) -> None:
+        daily_path = self.daily / "2026-08-20.md"
+        daily_path.write_text("test daily", encoding="utf-8")
+        result = self._run_compile()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = json.loads(
+            (self.state / "compile-state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(state["last_status"], "ok")
+        calls = self._stub_calls("sonnet")
+        self.assertEqual(len(calls), 1)
+        stage_path = Path(calls[0]["cwd"])
+        self.assertNotIn(str(self.vault), str(stage_path.resolve()))
+
+    def test_compile_prepare_stage_guard_inside_vault(self) -> None:
+        daily_path = self.daily / "2026-08-20.md"
+        daily_path.write_text("test daily", encoding="utf-8")
+        unsafe_temp = self.vault / "tmp"
+        unsafe_temp.mkdir()
+        result = self._run_compile(
+            TMPDIR=str(unsafe_temp),
+            TEMP=str(unsafe_temp),
+            TMP=str(unsafe_temp),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = json.loads(
+            (self.state / "compile-state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(state["last_status"], "fail:policy")
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(health["error"], "stage-inside-vault")
+
+    def test_compile_manifest_diff_type_change(self) -> None:
+        import importlib
+        sys.path.insert(0, str(self.scripts))
+        compile_module = importlib.import_module("compile")
+        before = {"knowledge/concepts/type-test.md": ("file", "abc123")}
+        after = {"knowledge/concepts/type-test.md": ("dir", "")}
+        with self.assertRaises(compile_module.PolicyError) as context:
+            compile_module._validate_manifest_diff(before, after)
+        self.assertIn("type-change", str(context.exception))
+
+    @unittest.skipUnless(
+        hasattr(os, "symlink") or sys.platform == "win32",
+        "symlink not available",
+    )
+    def test_path_within_vault_reparse(self) -> None:
+        import importlib
+        sys.path.insert(0, str(self.scripts))
+        _platform = importlib.import_module("_platform")
+        self.assertFalse(
+            _platform.path_within_vault(Path("/etc/passwd"), self.vault)
+        )
+        safe_path = self.knowledge / "index.md"
+        safe_path.write_text("test", encoding="utf-8")
+        self.assertTrue(
+            _platform.path_within_vault(safe_path, self.vault)
+        )
+        self.assertFalse(_platform._is_link_or_reparse(safe_path))
+        self.assertTrue(_platform.path_within_vault(safe_path, self.root))
 
 
 if __name__ == "__main__":

@@ -124,7 +124,7 @@ fi
 mkdir -p "$vault/daily" "$vault/knowledge/concepts" "$vault/knowledge/connections" 2>/dev/null || true
 
 # .beyin-version yaz
-echo "2.1.0" > "$vault/.beyin-version" 2>/dev/null || true
+echo "2.2.0" > "$vault/.beyin-version" 2>/dev/null || true
 
 assert "kurulum_sifir_ile_biter" "$install_exit" "cikis kodu: $install_exit"
 

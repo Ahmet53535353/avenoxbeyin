@@ -23,6 +23,7 @@ import time
 
 sys.dont_write_bytecode = True
 import _portalock
+import _platform
 from typing import Any, Callable, Sequence
 
 
@@ -336,55 +337,29 @@ def _session_state_path(state_dir: Path, session_id: str) -> Path:
     return state_dir / f"flush-{key}.json"
 
 
-def _run_claude(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
-    claude = shutil.which("claude")
-    if claude is None:
-        return None, "claude-cli-missing"
-
-    environment = os.environ.copy()
-    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
-    try:
-        with tempfile.TemporaryDirectory(prefix="beyin-flush-") as temporary:
-            temporary_path = Path(temporary).resolve()
-            try:
-                inside_vault = (
-                    os.path.commonpath([temporary_path, vault_root.resolve()])
-                    == str(vault_root.resolve())
-                )
-            except ValueError:
-                inside_vault = False
-            if inside_vault:
-                return None, "temporary-directory-inside-vault"
-            result = subprocess.run(
-                [
-                    claude,
-                    "-p",
-                    "--model",
-                    "haiku",
-                    "--output-format",
-                    "text",
-                    "--safe-mode",
-                    "--tools",
-                    "",
-                ],
-                input=prompt,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                cwd=temporary_path,
-                env=environment,
-                timeout=240,
-                check=False,
+def _run_model(prompt: str, vault_root: Path) -> tuple[str | None, str | None]:
+    import model_runner
+    with tempfile.TemporaryDirectory(prefix="beyin-flush-") as temporary:
+        temporary_path = Path(temporary).resolve()
+        try:
+            inside_vault = (
+                os.path.commonpath([temporary_path, vault_root.resolve()])
+                == str(vault_root.resolve())
             )
-    except subprocess.TimeoutExpired:
-        return None, "claude-timeout"
-    except OSError:
-        return None, "claude-exec-error"
-
-    if result.returncode != 0:
-        return None, f"claude-exit-{result.returncode}"
-    return result.stdout.strip(), None
+        except ValueError:
+            inside_vault = False
+        if inside_vault:
+            return None, "temporary-directory-inside-vault"
+        stdout, error, provider = model_runner.run_model(
+            prompt=prompt,
+            cwd=temporary_path,
+            mode="text",
+            timeout=240,
+            preferred=None,
+        )
+        if error is not None:
+            return None, error
+        return stdout, None
 
 
 def _append_daily(
@@ -394,6 +369,11 @@ def _append_daily(
     now: dt.datetime,
 ) -> None:
     daily_dir = vault_root / "daily"
+    if daily_dir.exists() or daily_dir.is_symlink():
+        try:
+            _platform.check_source(daily_dir, vault_root, directory=True)
+        except ValueError as exc:
+            raise ValueError(f"daily-dir-invalid:{exc}")
     daily_dir.mkdir(parents=True, exist_ok=True)
     date_text = now.strftime("%Y-%m-%d")
     daily_path = daily_dir / f"{date_text}.md"
@@ -595,6 +575,14 @@ def _flush_once(args: argparse.Namespace, event_time: dt.datetime) -> int:
     if not isinstance(transcript_value, str) or not transcript_value:
         raise ValueError("transcript-path-missing")
     transcript_path = Path(transcript_value).expanduser()
+    if _platform._is_link_or_reparse(transcript_path):
+        raise ValueError("transcript-path-symlink")
+    try:
+        transcript_stat = transcript_path.lstat()
+    except OSError as exc:
+        raise ValueError(f"transcript-path-stat:{exc}")
+    if not stat.S_ISREG(transcript_stat.st_mode):
+        raise ValueError("transcript-path-not-regular")
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = _session_lock_path(STATE_DIR, session_id)
@@ -624,7 +612,7 @@ def _flush_once(args: argparse.Namespace, event_time: dt.datetime) -> int:
                 warning=True,
             )
 
-        summary, error = _run_claude(build_flush_prompt(transcript), VAULT_ROOT)
+        summary, error = _run_model(build_flush_prompt(transcript), VAULT_ROOT)
         if error is not None:
             _record_flush_failure(
                 STATE_DIR,

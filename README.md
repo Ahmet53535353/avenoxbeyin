@@ -1,6 +1,6 @@
-# 🧠 avenoxbeyin v2.1: hatırlamayı unutmayan ikinci beyin
+# 🧠 avenoxbeyin v2.2: hatırlamayı unutmayan ikinci beyin
 
-[Obsidian](https://obsidian.md) + [Google Antigravity](https://github.com/avenoxai/avenoxbeyin/blob/main/SETUP-ANTIGRAVITY.md), [Claude Code](https://claude.com/claude-code) veya Codex üstünde çalışan,
+[Obsidian](https://obsidian.md) + [Google Antigravity](https://github.com/avenoxai/avenoxbeyin/blob/main/SETUP-ANTIGRAVITY.md), [Claude Code](https://claude.com/claude-code), Codex veya [OpenCode](https://opencode.ai) üstünde çalışan,
 açık kaynak bir **ikinci beyin**. Yerel bir Markdown vault, kalıcı hafıza, sıfır bağımlılık,
 sıfır ekstra ücret. Dosya yönetmezsin, konuşursun.
 
@@ -45,6 +45,23 @@ uygulatabilirsin. Kurulum
 `AGENTS.md`, `.agents/skills` ve mutlak yollu `.codex/hooks.json` üretir. İlk açılışta Codex'in
 `/hooks` ekranından proje kancalarını onaylaman gerekir; güven hash'leri kullanıcı adına
 değiştirilmez. Claude Code ve Codex aynı router, skill ve kanca kodunu okur; iki ayrı kopya yoktur.
+
+### OpenCode ile Kurulum
+
+OpenCode'ta beyin vault'unu açmak için:
+
+```bash
+git clone https://github.com/avenoxai/avenoxbeyin.git
+cd avenoxbeyin
+python scripts/install_opencode.py --vault-path ~/Brain
+```
+
+OpenCode eklentisi (`plugins/opencode-brain/`) oturum başında bağlamı enjekte eder, oturum
+kapanışında transcript'i SQLite veritabanından okuyup `daily/` günlüğüne yazar. Eklenti
+`~/.config/opencode/plugins/` altına kopyalanır ve `opencode.jsonc` dosyasına otomatik
+kaydedilir. Bridge betikleri (`bridge.py`, `lifecycle.py`, `runtime_platform.py`,
+`read_transcript.py`) vault'un `.beyin/hooks/` dizinine eklenir. Detaylı bilgi:
+[`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md).
 
 ### Google Antigravity ile Kurulum
 
@@ -91,15 +108,18 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
   okuyor. Klasörün adı ortağının adıysa (`🔮 850-Echo` gibi) script bunu `git mv` ile değiştirmeyi
   teklif eder. İçerik hiç değişmez, sadece klasör adı değişir. Hayır dersen yükseltme hiç
   başlamaz ve vault'a v2 damgası vurulmaz; yarım kurulmuş bir v2'den dürüst bir v1 iyidir.
-- **İlk iş git anlık görüntüsü.** Alınamazsa yükseltme durur, devam etmez. Geri dönüş her zaman
-  açık.
+- **Yükseltmeden önce doğrulanmış git snapshot + harici yedek alınır.** Yükseltici önce
+  `git add -A && git commit` ile **doğrulanmış** bir git snapshot alır; commit başarısız olursa
+  (HEAD değişmemiş veya sahne boşalmış) yükseltme durur. Git yoksa vault **dışına** (varsayılan
+  `~/.avenoxbeyin-yedek/`, vault ve repo dışında) doğrulanmış tam kopya yazılır; kaynak ve
+  kopya dosya sayısı eşit değilse yine durur. Yedekleme başarısızsa hiçbir dosya değişmez.
 - **Sürüm damgası en sona yazılır.** Kancalar, scriptler, placeholder'lar, kanca sayısı ve
   `.gitignore` koruması tek tek doğrulandıktan sonra. Bir kapı bile geçilmezse `.beyin-version`
   yazılmaz.
 
 ---
 
-## v1/v2.0 → v2.1
+## v1/v2.0 → v2.2
 
 | | v1 | v2 |
 | --- | --- | --- |
@@ -113,6 +133,8 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
 | Eski geçmiş | yok | `geçmiş import`: ChatGPT, Claude, Gemini dışa aktarımları |
 | Yükseltme | yok | yerinde, ekleme yapan, tekrar çalıştırılabilir |
 | Bağımlılık | bash | bash + python3 (ikisi de sistemde var) |
+| Güvenlik | yok | reparse-point koruması, staging izolasyonu (v2.2) |
+| Harness desteği | Claude, Codex | + Antigravity, OpenCode (v2.2) |
 
 ---
 
@@ -219,8 +241,8 @@ MIT, [LICENSE](LICENSE) dosyasına bak. PR'lar açık.
 
 ## In English (short version)
 
-**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code or
-Codex, with
+**avenoxbeyin** is an open-source AI second brain: an Obsidian vault driven by Claude Code, Codex,
+OpenCode, or Google Antigravity, with
 memory that survives across sessions. v1 gave you continuity but depended on the model remembering
 to write its memory files. v2's thesis is that **memory must be a mechanism, not a discipline**: a
 `SessionEnd` and a `PreCompact` hook flush every conversation into `daily/` logs automatically via
@@ -230,7 +252,7 @@ articles under `knowledge/`. The next session starts with that knowledge index a
 On macOS, Linux, or WSL, install with `git clone https://github.com/avenoxai/avenoxbeyin.git && cd
 avenoxbeyin && claude "Read SETUP.md and follow it exactly to set up my second brain from this
 template."` Codex can follow the same `SETUP.md`; its project hooks are rendered with absolute
-paths and require one-time approval in `/hooks`. On native Windows, use the same clone but ask
+paths and require one-time approval in `/hooks`. OpenCode uses `scripts/install_opencode.py`. On native Windows, use the same clone but ask
 Claude Code to read `SETUP-WINDOWS.md`; do not run the Bash installer. Already running v1 or v2.0?
 The same command detects it and hands the work to one committed script, `scripts/upgrade.sh`:
 additive only, your memory files are never touched, the settings merge is idempotent, and it takes
@@ -247,6 +269,7 @@ Codex wiring is regression-tested, but a live native-Windows Codex session has n
 claimed as verified.
 
 No extra cost: everything runs on your existing Claude subscription through `claude -p`. No API
-keys, no paid services, bash and python3 stdlib only. Knowledge-compilation architecture credit:
+keys, no paid services, bash and python3 stdlib only. v2.2 adds OpenCode harness support and
+reparse-point / staging-isolation security hardening. Knowledge-compilation architecture credit:
 Andrej Karpathy's LLM knowledge base pattern,
 https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f. MIT licensed.

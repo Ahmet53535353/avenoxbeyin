@@ -166,7 +166,8 @@ pick a path yet: fix the error first.
 | `TARAMA TAMAM: 0 aday` | Yeni kurulum. FAST PATH, sonra gerekirse from-scratch fallback |
 | Aday var, `.beyin-version` yok | **Yükseltme.** FAST PATH ile repoyu klonla, `SETUP.md` MODE B |
 | Aday var, sürüm `2.0.0` | v2.1 harness-neutral yükseltmesini çalıştır |
-| Aday var, sürüm `2.1.0` | Güncel. Vault'ta `claude` veya `codex` açıp `beyin doktor` çalıştır, bitir |
+| Aday var, sürüm `2.1.0` | v2.2 yükseltmesini çalıştır (OpenCode eklentisi + güvenlik sertleştirmesi) |
+| Aday var, sürüm `2.2.0` | Güncel. OpenCode ise `python scripts/install_opencode.py --vault-path <vault>` çalıştır |
 
 The upgrade path is not optional politeness, it is the only correct move: a v1 vault holds months
 of the user's memory. Never build a fresh vault next to one that already exists without saying so
