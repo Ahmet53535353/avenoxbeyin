@@ -138,7 +138,8 @@ untrack_ignored_pycache() {
   PYC_COUNT=$(printf '%s\n' "$TRACKED_PYC" | grep -c . || printf '0')
   printf '%s\n' "$TRACKED_PYC" | while IFS= read -r PYC; do
     [ -n "$PYC" ] || continue
-    git -C "$V" rm --cached -q -- "$PYC" >/dev/null 2>&1 || :
+    git -C "$V" rm --cached -q -- "$PYC" >/dev/null 2>&1 \
+      || die "derlenmiş Python dosyası izlemeden çıkarılamadı: $PYC"
   done
   say "izlemeden çıkarıldı (derlenmiş Python, dosyalar diskte duruyor): $PYC_COUNT adet"
 }

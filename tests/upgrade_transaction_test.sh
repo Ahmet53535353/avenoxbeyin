@@ -531,6 +531,49 @@ test_untracks_tracked_pycache() {
   grep -qxF '*.pyc' "$vault/.gitignore" || { diag ".gitignore *.pyc icermiyor"; return 1; }
 }
 
+test_pycache_untrack_failure_is_fatal() {
+  local case_dir vault pyc rel fake_path real_git
+  case_dir=$(new_case)
+  vault="$case_dir/vault"
+  make_v1_vault "$vault" --clean-local
+  prepare_finalizable_vault "$vault"
+
+  rel=".claude/scripts/__pycache__/flush.cpython-312.pyc"
+  pyc="$vault/$rel"
+  mkdir -p "$(dirname "$pyc")"
+  printf 'not real bytecode, only a tracked placeholder\n' > "$pyc"
+  git -C "$vault" add -f -- "$rel" >/dev/null 2>&1 || return 1
+  git -C "$vault" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q -m "v1: derlenmis bytecode izleniyor" || return 1
+
+  real_git=$(command -v git)
+  fake_path="$case_dir/bin"
+  mkdir -p "$fake_path"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [ "${1:-}" = "-C" ] && [ "${3:-}" = "rm" ]; then exit 42; fi' \
+    'exec "$REAL_GIT" "$@"' > "$fake_path/git"
+  chmod +x "$fake_path/git"
+
+  prepare_case_dirs "$case_dir"
+  set +e
+  env HOME="$case_dir/home" \
+      TMPDIR="$case_dir/tmp" \
+      BEYIN_BACKUP_ROOT="$case_dir/backup" \
+      REAL_GIT="$real_git" \
+      PATH="$fake_path:$PATH" \
+      "$BASH_BIN" "$UPGRADE" --vault "$vault" --stage apply >"$case_dir/apply.out" 2>&1
+  RUN_STATUS=$?
+  set -e
+
+  [ "$RUN_STATUS" -ne 0 ] || { diag "git rm hatasi yutuldu"; return 1; }
+  grep -q "izlemeden çıkarılamadı" "$case_dir/apply.out" \
+    || { diag "git rm hatasi acik raporlanmadi"; return 1; }
+  git -C "$vault" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
+    || { diag "basarisiz git rm vakasinda index beklenmedik bicimde degisti"; return 1; }
+  assert_file "$pyc" || return 1
+}
+
 run_case "--vault olmadan apply kullanım hatası verir ve yazmaz" test_missing_vault
 run_case "göreli --vault kullanım hatasıyla reddedilir" test_relative_vault
 run_case "kök dizin vault olarak reddedilir ve değişmez" test_root_vault
@@ -549,6 +592,7 @@ run_case "yeniden adlandırma onayı yoksa apply atomik olarak 10 döndürür" t
 run_case "yeniden adlandırma Core.md içeriğini aynen korur" test_rename_preserves_core
 run_case "kullanıcının kendi kancası yükseltmede aynen korunur" test_user_hook_preserved
 run_case "izlenen __pycache__ artıkları izden çıkarılır ama diskte kalır" test_untracks_tracked_pycache
+run_case "__pycache__ izlemeden çıkarılamazsa yükseltme açıkça durur" test_pycache_untrack_failure_is_fatal
 
 printf '1..%s\n' "$TEST_COUNT"
 [ "$FAIL_COUNT" -eq 0 ]
