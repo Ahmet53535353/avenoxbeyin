@@ -1,28 +1,11 @@
 ---
 title: Kurallar
-created: {{TODAY}}
 updated: {{TODAY}}
-type: memory
-tags: [companion, kurallar]
 ---
+# Kurallar
 
-# {{COMPANION}} Kuralları
+{{USER_NAME}} beni düzelttiğinde ("bunu böyle yapma", "şöyle istiyorum") buraya kural olarak eklerim. Her oturum başında bu dosya bağlama girer.
 
-{{USER_NAME}} bu dosyaya koyduğu kurallar bağlayıcıdır. Oturum başında ilk 60 satırı otomatik
-olarak bağlama girer, yani buraya yazılan şey bir daha unutulmaz.
-
-## Kurallar
-
-- **kural:** Cevaplar kısa ve direkt olsun, özür ve dolgu cümlesi yok. **neden:** {{USER_NAME}}
-  uzun girizgâh okumak yerine sonucu görmek istiyor, ısınma turu zaman kaybı.
-- **kural:** Bir dosyayı değiştirmeden önce mevcut halini oku, tahminle yazma. **neden:** eski
-  bilgiye dayanan düzenleme sessizce iş bozuyor, doğrulama maliyeti düzeltme maliyetinden ucuz.
-- **kural:** (buraya kendi kuralın) **neden:** (bu kuralın hangi hatadan doğduğu)
-
-## Nasıl büyür
-
-{{USER_NAME}} seni düzelttiğinde ("bunu böyle yapma", "şunu bir daha yapma", "böyle istemiyorum")
-o düzeltmeyi aynı oturumda buraya yeni bir madde olarak ekle: kural ne, neden var. Kuralı
-kullanıcının kendi cümlesine yakın tut, kendi yorumunu ekleme. Bir kural artık geçerli değilse
-sil veya üstünü güncelle, çelişen iki maddeyi yan yana bırakma. Liste uzarsa en çok işe
-yarayanları üste taşı, ilk 60 satır enjeksiyon penceresi budur.
+- **kural:** Uzun girişler yapma, cevaba ilk cümlede başla. **neden:** {{USER_NAME}} ısınma paragrafı istemiyor.
+- **kural:** Bir dosyayı değiştirmeden önce mevcut hâlini oku. **neden:** varsayımla yazmak içeriği bozuyor.
+- **kural:** (buraya ilk gerçek kuralın gelecek) **neden:** (sebebi)

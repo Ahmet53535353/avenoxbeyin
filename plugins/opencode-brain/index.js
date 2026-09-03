@@ -1,27 +1,30 @@
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, appendFileSync, unlinkSync } from "node:fs";
 
-const HOME = homedir();
-const VAULT = `${HOME}/Brain`;
-const BEYIN = `${VAULT}/.beyin`;
-const BRIDGE = `${BEYIN}/hooks/bridge.py`;
-const STATE_DIR = `${BEYIN}/.state`;
-const LOG = `${HOME}/.cache/opencode-brain-plugin.log`;
-const IDLE_DEBOUNCE_MS = 120000;
+function getVaultDir(inputDirectory: string | undefined): string {
+  // Prefer CLAUDE_PROJECT_DIR (set by OpenCode when running in a project)
+  // Fall back to input directory, then ~/Brain
+  return process.env.CLAUDE_PROJECT_DIR || inputDirectory || `${homedir()}/Brain`;
+}
 
-function log(...args) {
+function log(...args: unknown[]) {
   try {
-    appendFileSync(LOG, `[${new Date().toISOString()}] ${args.map(String).join(" ")}\n`);
+    appendFileSync(
+      `${homedir()}/.cache/opencode-brain-plugin.log`,
+      `[${new Date().toISOString()}] ${args.map(String).join(" ")}\n`,
+    );
   } catch {}
 }
 
 log("PLUGIN_MODULE_LOADED");
 
-function runBridge(event, payload, capture) {
-  mkdirSync(STATE_DIR, { recursive: true });
-  const payloadFile = `${STATE_DIR}/bridge-in-${event}-${Date.now()}.json`;
+function runBridge(vaultDir: string, event: string, payload: Record<string, unknown>, capture: boolean) {
+  const stateDir = `${vaultDir}/.claude/scripts/.state`;
+  mkdirSync(stateDir, { recursive: true });
+  const payloadFile = `${stateDir}/bridge-in-${event}-${Date.now()}.json`;
   writeFileSync(payloadFile, JSON.stringify(payload));
-  const cmd = ["python3", BRIDGE, "--provider", "opencode", "--event", event];
+  const bridge = `${vaultDir}/.claude/scripts/bridge.py`;
+  const cmd = ["python3", bridge, "--provider", "opencode", "--event", event];
   const proc = Bun.spawn(cmd, {
     stdin: Bun.file(payloadFile),
     stdout: capture ? "pipe" : "ignore",
@@ -44,22 +47,22 @@ function runBridge(event, payload, capture) {
   return Promise.resolve("");
 }
 
-function buildTranscript(messages) {
+function buildTranscript(messages: unknown[]) {
   const lines = [];
   for (const m of messages || []) {
-    const role = m?.info?.role || m?.role;
+    const role = (m as Record<string, unknown>)?.info?.role as string || (m as Record<string, unknown>)?.role as string;
     if (role !== "user" && role !== "assistant") continue;
     let text = "";
-    const parts = Array.isArray(m.parts) ? m.parts : [];
+    const parts = Array.isArray((m as Record<string, unknown>).parts) ? (m as Record<string, unknown>).parts as unknown[] : [];
     if (parts.length) {
       text = parts
-        .filter((p) => p && (p.type === "text" || p.type === "reasoning"))
-        .map((p) => p.text || "")
+        .filter((p) => p && ((p as Record<string, unknown>).type === "text" || (p as Record<string, unknown>).type === "reasoning"))
+        .map((p) => (p as Record<string, unknown>).text as string || "")
         .join("\n");
-    } else if (typeof m.content === "string") {
-      text = m.content;
-    } else if (m.content && typeof m.content === "object") {
-      text = JSON.stringify(m.content);
+    } else if (typeof (m as Record<string, unknown>).content === "string") {
+      text = (m as Record<string, unknown>).content as string;
+    } else if ((m as Record<string, unknown>).content && typeof (m as Record<string, unknown>).content === "object") {
+      text = JSON.stringify((m as Record<string, unknown>).content);
     }
     if (!text.trim()) continue;
     lines.push(JSON.stringify({ message: { role, content: text } }));
@@ -67,39 +70,44 @@ function buildTranscript(messages) {
   return lines.join("\n");
 }
 
-function extractSessionID(event) {
+function extractSessionID(event: Record<string, unknown>): string | undefined {
   return (
-    event?.properties?.sessionID ||
-    event?.sessionID ||
-    event?.info?.sessionID ||
-    event?.properties?.sessionId ||
-    event?.properties?.session?.id ||
-    event?.sessionId
+    (event.properties as Record<string, unknown>)?.sessionID as string ||
+    event.sessionID as string ||
+    (event.info as Record<string, unknown>)?.sessionID as string ||
+    (event.properties as Record<string, unknown>)?.sessionId as string ||
+    (event.properties as Record<string, unknown>)?.session?.id as string ||
+    event.sessionId as string
   );
 }
 
-function extractCwd(event, fallback) {
+function extractCwd(event: Record<string, unknown>, fallback: string): string {
   return (
-    event?.properties?.info?.directory ||
-    event?.properties?.directory ||
-    event?.properties?.cwd ||
-    event?.info?.cwd ||
+    (event.properties as Record<string, unknown>)?.info?.directory as string ||
+    (event.properties as Record<string, unknown>)?.directory as string ||
+    (event.properties as Record<string, unknown>)?.cwd as string ||
+    (event.info as Record<string, unknown>)?.cwd as string ||
     fallback
   );
 }
 
-export default async function OpencodeBrain(input) {
-  const { client, directory } = input || {};
+export default async function OpencodeBrain(input: { client?: unknown; directory?: string } = {}) {
+  const { directory } = input;
   const DEFAULT_CWD = directory || process.cwd();
-  const contextStore = new Map();
-  const cwdStore = new Map();
-  const injected = new Set();
-  const lastIdleFlush = new Map();
+  const VAULT_DIR = getVaultDir(directory);
+  const READ_TRANSCRIPT = `${VAULT_DIR}/.claude/scripts/read_transcript.py`;
 
-  async function populateContext(sessionID, cwd) {
+  const contextStore = new Map<string, string>();
+  const cwdStore = new Map<string, string>();
+  const injected = new Set<string>();
+  const lastIdleFlush = new Map<string, number>();
+  const IDLE_DEBOUNCE_MS = 120000;
+
+  async function populateContext(sessionID: string, cwd: string) {
     if (contextStore.has(sessionID)) return;
     try {
       const ctx = await runBridge(
+        VAULT_DIR,
         "start",
         {
           session_id: sessionID,
@@ -120,14 +128,12 @@ export default async function OpencodeBrain(input) {
     }
   }
 
-  const READ_TRANSCRIPT = `${BEYIN}/read_transcript.py`;
-
-  async function readTranscript(sessionID) {
+  async function readTranscript(sessionID: string) {
     try {
-      const proc = Bun.spawn(
-        ["python3", READ_TRANSCRIPT, "--session", sessionID],
-        { stdout: "pipe", stderr: "ignore" },
-      );
+      const proc = Bun.spawn(["python3", READ_TRANSCRIPT, "--session", sessionID], {
+        stdout: "pipe",
+        stderr: "ignore",
+      });
       const out = await Bun.readableStreamToText(proc.stdout);
       await proc.exited;
       const msgs = [];
@@ -145,7 +151,7 @@ export default async function OpencodeBrain(input) {
     }
   }
 
-  async function flushSession(sessionID, reason) {
+  async function flushSession(sessionID: string, reason: string) {
     if (!sessionID) return;
     try {
       const messages = await readTranscript(sessionID);
@@ -155,10 +161,12 @@ export default async function OpencodeBrain(input) {
         log("flush-skip-empty", reason, sessionID, "msgs", messages?.length || 0);
         return;
       }
-      mkdirSync(STATE_DIR, { recursive: true });
-      const tmp = `${STATE_DIR}/transcript-${sessionID}.jsonl`;
+      const stateDir = `${VAULT_DIR}/.claude/scripts/.state`;
+      mkdirSync(stateDir, { recursive: true });
+      const tmp = `${stateDir}/transcript-${sessionID}.jsonl`;
       writeFileSync(tmp, transcript);
       await runBridge(
+        VAULT_DIR,
         reason === "precompact" ? "precompact" : "end",
         {
           session_id: sessionID,
@@ -176,8 +184,8 @@ export default async function OpencodeBrain(input) {
   }
 
   return {
-    event: async ({ event }) => {
-      const rawType = event?.type || "";
+    event: async ({ event }: { event: Record<string, unknown> }) => {
+      const rawType = (event?.type as string) || "";
       const type = rawType.toLowerCase();
       const sessionID = extractSessionID(event);
       const cwd = extractCwd(event, DEFAULT_CWD);
@@ -210,27 +218,27 @@ export default async function OpencodeBrain(input) {
       }
     },
 
-    "experimental.session.compacting": async ({ sessionID }, output) => {
+    "experimental.session.compacting": async ({ sessionID }: { sessionID: string }, output: Record<string, unknown>) => {
       await flushSession(sessionID, "precompact");
       const ctx = contextStore.get(sessionID);
       if (ctx && ctx.trim()) {
         output.context = output.context || [];
-        output.context.push(ctx);
+        (output.context as unknown[]).push(ctx);
       }
     },
 
-    "experimental.chat.system.transform": async ({ sessionID }, output) => {
+    "experimental.chat.system.transform": async ({ sessionID }: { sessionID: string }, output: Record<string, unknown>) => {
       if (!sessionID || injected.has(sessionID)) return;
       const ctx = contextStore.get(sessionID);
       if (ctx && ctx.trim()) {
         output.system = output.system || [];
-        output.system.push(ctx);
+        (output.system as unknown[]).push(ctx);
         injected.add(sessionID);
         log("inject-context", sessionID, ctx.length, "chars");
       }
     },
 
-    "command.execute.before": async ({ command, sessionID }, output) => {
+    "command.execute.before": async ({ command, sessionID }: { command: string; sessionID: string }, output: Record<string, unknown>) => {
       const name = (command || "").replace(/^\//, "");
       log("command.execute.before", name, sessionID || "-");
       if (name !== "beyin-bitir") return;
@@ -238,19 +246,17 @@ export default async function OpencodeBrain(input) {
       output.parts = [
         {
           type: "text",
-          text: "🧠 Oturum hafızası güncellendi: özet daily/ günlüğüne yazıldı (Codex ile).",
+          text: "🧠 Oturum hafızası güncellendi: özet daily/ günlüğüne yazıldı.",
         },
       ];
     },
 
-    config: async (config) => {
+    config: async (config: Record<string, unknown>) => {
       log("CONFIG_HOOK");
       config.command = config.command || {};
       config.command["beyin-bitir"] = {
-        description:
-          "Beyin oturumunu kapat: mevcut oturumu Codex ile özetleyip 📥 daily günlüğüne flush et.",
-        template:
-          "Beyin oturumunu bitir. opencode-brain eklentisi oturum özetini zaten çıkardı; kullanıcıya kısa bir Türkçe onay ver.",
+        description: "Beyin oturumunu kapat: mevcut oturumu özetleyip 📥 daily günlüğüne flush et.",
+        template: "Beyin oturumunu bitir. opencode-brain eklentisi oturum özetini zaten çıkardı; kullanıcıya kısa bir Türkçe onay ver.",
       };
     },
   };

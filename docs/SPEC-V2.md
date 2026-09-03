@@ -26,8 +26,8 @@ calls prevents locale-dependent encoding crashes on Windows.
 
 OpenCode integration uses the `plugins/opencode-brain/` Node.js plugin, which writes
 transcripts to `${HOME}/.opencode/.state/beyin/`. `install_opencode.py` copies the plugin to
-`~/.config/opencode/plugins/` and registers it in `opencode.jsonc`. Bridge hooks (`bridge.py`,
-`read_transcript.py`) are copied to `.beyin/hooks/` alongside the vault.
+`~/.config/opencode/plugins/` and registers it in `opencode.jsonc`. Bridge script (`bridge.py`)
+and transcript reader (`read_transcript.py`) are copied to `.claude/scripts/` alongside the vault.
 
 Principles (binding):
 1. **Zero cost to the user.** Everything runs on the user's existing Claude subscription via `claude -p`. No API keys required anywhere. No paid services. Optional things stay optional and free.
@@ -219,7 +219,7 @@ Same self-contained structure as v1's public spec but v2: FAST PATH = clone repo
 
 ### 6.3 README.md v2
 Rewrite: what it is (2 paragraphs, thesis "hafıza rica değil mekanizma"), v1→v2 comparison table, quickstart (3 commands), upgrade note, architecture ASCII diagram of the flush→daily→compile pipeline, cost honesty paragraph (same as 6.2), credits: "Bilgi derleme mimarisi Andrej Karpathy'nin LLM bilgi tabanı desenine dayanır" with gist link. MIT.
-### 6.4 `.beyin-version`: file containing `2.1.0`.
+### 6.4 `.beyin-version`: file containing `2.2.0`.
 
 ## 7. Integration gates (run by the architect after lanes land)
 1. `bash tests/hooks_test.sh` green.

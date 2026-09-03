@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize provider-native hook payloads into the shared Respot Brain runtime."""
+"""Normalize provider-native hook payloads and delegate to canonical hooks."""
 
 from __future__ import annotations
 
@@ -19,15 +19,17 @@ for _stream in (sys.stdout, sys.stderr):
         reconfigure(encoding="utf-8")
 
 
-ROOT = Path(os.environ.get("BRAIN_VAULT", "~/Brain")).expanduser()
+ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR", os.environ.get("BRAIN_VAULT", "~/Brain"))).expanduser()
 HOOK_DIR = Path(__file__).resolve().parent
-if str(HOOK_DIR) not in sys.path:
-    sys.path.insert(0, str(HOOK_DIR))
-
-import lifecycle as LIFECYCLE
-
 
 EVENTS = ("start", "prompt", "end", "precompact")
+
+HOOK_MAP = {
+    "start": "session-start.sh",
+    "prompt": "prompt-counter.sh",
+    "end": "session-end.sh",
+    "precompact": "pre-compact.sh",
+}
 
 
 def load_input() -> dict[str, Any]:
@@ -82,6 +84,31 @@ def normalize(provider: str, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def run_hook(hook_name: str, payload: dict[str, Any], env: dict[str, str] | None = None) -> str:
+    """Run a canonical hook script and return its stdout context."""
+    hook_path = HOOK_DIR / hook_name
+    if not hook_path.exists():
+        return ""
+    try:
+        hook_env = os.environ.copy()
+        hook_env["CLAUDE_PROJECT_DIR"] = str(ROOT)
+        if env:
+            hook_env.update(env)
+        result = subprocess.run(
+            [str(hook_path)],
+            input=json.dumps(payload, ensure_ascii=False),
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            timeout=30,
+            env=hook_env,
+            check=False,
+        )
+        return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
 def extract_context(stdout: str) -> str:
     for line in reversed(stdout.splitlines()):
         try:
@@ -120,13 +147,6 @@ def output(provider: str, event: str, context: str) -> None:
     elif context:
         event_name = {"start": "SessionStart", "prompt": "UserPromptSubmit", "end": "SessionEnd", "precompact": "PreCompact"}[event]
         print(json.dumps({"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": context}}, ensure_ascii=False))
-
-
-def dispatch(provider: str, event: str, payload: dict[str, Any]) -> str:
-    if os.environ.get("BEYIN_INVOKED_BY"):
-        return ""
-    normalized = normalize(provider, payload)
-    return LIFECYCLE.handle(event, normalized, ROOT, provider)
 
 
 def inside_vault(active: str) -> bool:
@@ -169,7 +189,10 @@ def main() -> int:
         output(args.provider, args.event, "")
         return 0
 
-    context = dispatch(args.provider, args.event, payload)
+    hook_name = HOOK_MAP[args.event]
+    hook_env = {"BEYIN_INVOKED_BY": "beyin-scripts"} if args.event in ("end", "precompact") else None
+    stdout = run_hook(hook_name, payload, hook_env)
+    context = extract_context(stdout)
     output(args.provider, args.event, context)
     return 0
 

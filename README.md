@@ -59,8 +59,8 @@ python scripts/install_opencode.py --vault-path ~/Brain
 OpenCode eklentisi (`plugins/opencode-brain/`) oturum başında bağlamı enjekte eder, oturum
 kapanışında transcript'i SQLite veritabanından okuyup `daily/` günlüğüne yazar. Eklenti
 `~/.config/opencode/plugins/` altına kopyalanır ve `opencode.jsonc` dosyasına otomatik
-kaydedilir. Bridge betikleri (`bridge.py`, `lifecycle.py`, `runtime_platform.py`,
-`read_transcript.py`) vault'un `.beyin/hooks/` dizinine eklenir. Detaylı bilgi:
+kaydedilir. Bridge betiği (`bridge.py`) ve transcript okuyucu (`read_transcript.py`)
+vault'un `.claude/scripts/` dizinine eklenir. Detaylı bilgi:
 [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md).
 
 ### Google Antigravity ile Kurulum

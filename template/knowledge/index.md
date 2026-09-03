@@ -1,8 +1,6 @@
-# Bilgi Tabanı İndeksi
+# Bilgi Tabanı: İndeks
 
-Bu dosya derleyicinin (`.claude/scripts/compile.py`) her akşam güncellediği makine yazımı
-indekstir. Elle de düzenleyebilirsin, derleyici satırları yerinde günceller, tabloyu silmez.
-Her satır `knowledge/concepts/` altındaki bir makaleye karşılık gelir.
+Bu tabloyu gece derleyicisi doldurur. Elle düzenlemene gerek yok.
 
 | Makale | Özet | Kaynak | Güncellendi |
 | --- | --- | --- | --- |
