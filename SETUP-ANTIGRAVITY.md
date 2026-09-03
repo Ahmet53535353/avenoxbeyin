@@ -1,65 +1,33 @@
-# 🧠 avenoxbeyin - Google Antigravity Kurulum Kılavuzu
+# Antigravity ile Avenox Beyin v2.3 kurulumu
 
-Bu kılavuz, **avenoxbeyin v2.1** ikinci beyin sistemini **Google Antigravity** üzerinde çalıştırmak için hazırlanmıştır.
+Bu dosyayı Google Antigravity içinde, klonlanmış `avenoxbeyin` deposunun kökünde uygula.
+Ana kurulum sözleşmesi `SETUP.md` dosyasındadır; onu baştan sona oku ve aynen uygula, yalnızca
+aşağıdaki Antigravity farklarını kullan.
 
----
+## Bağlayıcı farklar
 
-## ⚡ Hızlı Başlangıç
+1. Kurulumu Türkçe yürüt ve `SETUP.md` içindeki görüşme, geri alınabilirlik, placeholder ve
+   doğrulama kurallarını değiştirme.
+2. Önkoşulda `claude` yerine `agy` ara. `python3 -V` ve `agy --version` gerçekten sıfırla
+   bitmeden diske yazma. API anahtarı isteme; kullanıcının mevcut Antigravity oturumunu kullan.
+3. Yerel Windows'ta Bash yolunu çalıştırma. `SETUP-WINDOWS.md` içindeki yerel Windows akışını
+   izle ve kurucuyu `-Harness Antigravity` ile çağır.
+4. macOS, Linux veya WSL'de `SETUP.md` MODE A akışını uygula. PHASE 2'de hem
+   `render_codex_hooks.py` hem `render_antigravity_hooks.py` çalışmalı.
+5. macOS, Linux veya WSL'deki mevcut v1, v2.0, v2.1 veya v2.2 vault için `scripts/upgrade.sh` v2.3
+   yükseltmesini kullan. Yerel Windows'ta mevcut vault yükseltmesi hâlâ destek dışıdır; sıfırdan
+   `install.ps1 -Harness Antigravity` kurulumu desteklenir.
+6. Final raporunda `.agents/hooks.json` içindeki `avenox-beyin` kaydını, mutlak komutları ve
+   `.beyin-version = 2.3.0` değerini doğrula.
 
-### 1. Depoyu Klonlayın
+## Davranış sınırı
 
-```bash
-git clone https://github.com/avenoxai/avenoxbeyin.git
-cd avenoxbeyin
-```
+Antigravity `PreInvocation` olayı ilk model çağrısında hafıza bağlamını geçici sistem mesajı
+olarak ekler. `Stop`, uygulamadan çıkış değil her tamamlanan yürütme döngüsüdür. Bu nedenle adaptör
+yalnızca son kullanıcı-asistan alışverişini işler, konuşma başına bir digest tutar ve aynı turu
+ikinci kez günlük loga yazmaz. Özet ve derleme mevcut `agy -p` oturumunu kullanır; doğrudan Gemini
+API anahtarı veya ikinci bir motor kopyası yoktur.
 
-### 2. Kurulum Betiğini Çalıştırın
-
-```bash
-python scripts/install_antigravity.py --vault-path "C:/Users/Kullanici/Documents/BeynimOS" --user-name "Adiniz" --user-bio "Yazilim Gelistirici" --companion "Echo" --os-name "BeynimOS"
-```
-
-*(Veya parametresiz çalıştırarak interaktif olarak yanıtlayabilirsiniz: `python scripts/install_antigravity.py`)*
-
-### 3. Kullanmaya Başlayın
-
-1. Oluşturulan vault klasörünü Antigravity ile açın:
-   ```bash
-   cd "C:/Users/Kullanici/Documents/BeynimOS"
-   ```
-2. Antigravity oturumunuzu başlatın.
-3. Notlarınızı görsel olarak düzenlemek ve grafik görünümünü incelemek için klasörü **Obsidian** uygulamasında (*Open folder as vault*) açın.
-
----
-
-## ⚙️ Nasıl Çalışır? (Antigravity Entegrasyonu)
-
-Antigravity, proje kökündeki `.agents/` yapılandırmalarını otomatik olarak tanır:
-
-1. **`GEMINI.md` / `AGENTS.md` (Sistem Direktifleri):**
-   - AI ortağınızın kişiliğini, klasör düzenini ve hafıza güncelleme protokolünü belirler.
-2. **`PreInvocation` Kancası (`.agents/hooks.json`):**
-   - Oturum başladığında `🔮 850-Companion/` altındaki hafıza dosyalarını (`Last-Session.md`, `Threads.md`, `Kurallar.md`), derlenmiş bilgi indeksini (`knowledge/index.md`) ve son günlük logları Antigravity bağlamına `ephemeralMessage` olarak otomatik enjekte eder.
-3. **`Stop` Kancası (`.agents/hooks.json`):**
-   - Oturum tamamlandığında transkripti (`transcript.jsonl`) okur, oturumun Türkçe özetini çıkarır ve `daily/YYYY-MM-DD.md` dosyasına ekler.
-4. **Yetenekler (`.agents/skills/`):**
-   - **`beyin-doktor`**: Kancaların, logların ve hafıza dosyalarının durumunu tek tabloda doğrular.
-   - **`bilgi-derle`**: Günlük logları `knowledge/concepts/` ve `knowledge/index.md` altında birbirine bağlı makalelere derler.
-   - **`gecmis-import`**: ChatGPT, Claude veya Google Takeout dışa aktarımlarını vault'a aktarır.
-
----
-
-## 🤖 Arka Plan Motoru (Özet ve Derleme Öncelik Sırası)
-
-Antigravity üzerinde çalışan `flush.py` (oturum özeti) ve `compile.py` (bilgi derleyici) motorları otomatik olarak şu hiyerarşiyi izler:
-
-1. **Antigravity CLI (`agy -p`):** Açık olan Antigravity oturumunuz üzerinden arka planda sıfır konfigürasyon ve **sıfır API anahtarı** ile çalışır.
-2. **Gemini API (`GEMINI_API_KEY`):** İsteğe bağlı olarak Google AI Studio API anahtarı tanımlanmışsa kullanılır.
-3. **Claude CLI (`claude -p`):** Sisteminizde Claude CLI yüklüyse kullanılır.
-4. **Sıfır Kayıp Yerel Yedek:** Hiçbir araç bulunamazsa oturum diyaloglarını ham formatta `daily/` dosyasına işler, asla veri kaybetmez.
-
-### İsteğe Bağlı API Anahtarı Tanımlama (Opsiyonel)
-
-Eğer harici Gemini API kullanmak isterseniz:
-- **Windows (PowerShell):** `[System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'AIzaSy...', 'User')`
-- **macOS / Linux:** `export GEMINI_API_KEY="AIzaSy..."`
+Kurulumdan sonra Antigravity'yi doğrudan vault kökünde aç. İlk gerçek konuşmadan sonra
+`daily/YYYY-MM-DD.md` oluşmasını bekle; oluşmazsa `beyin doktor` çalıştır ve
+`.claude/scripts/.state/health.json` dosyasındaki son motor hatasını raporla.

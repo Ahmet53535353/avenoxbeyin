@@ -6,10 +6,14 @@ Status: BUILD CONTRACT. Implementation lanes implement EXACTLY this. Where this 
 
 v1 shipped a folder skeleton + 3 hooks + memory files whose upkeep depended entirely on the LLM remembering to write. v2's thesis: **memory must be a mechanism, not a discipline.** New in v2: automatic session flush → daily logs → once-daily knowledge compilation, pre-compaction capture, a health doctor, a history-import path, and an in-place upgrade for existing v1 vaults.
 
-### v2.2 harness-neutral addendum
+### v2.2 multi-harness addendum
 
-Claude Code, Codex, Google Antigravity, and OpenCode all serve as the background summarizer/compiler
-runtime. On POSIX, `CLAUDE.md` is the canonical router and `AGENTS.md` points to it;
+v2.2 adds Google Antigravity through `.agents/hooks.json` and a thin adapter in the canonical
+`.claude/scripts` engine. Claude Code, Codex and Antigravity do not carry separate copies of
+`flush.py`, `compile.py`, hooks or skills.
+
+Claude Code remains the background summarizer/compiler runtime, but the operator surface may be
+Claude Code, Codex or Antigravity. On POSIX, `CLAUDE.md` is the canonical router and `AGENTS.md` points to it;
 `.claude/skills` is canonical and `.agents/skills` points to it; `.claude/hooks` is canonical and
 `.codex/hooks` points to it. `.codex/hooks.json` is rendered at install/upgrade time with absolute
 paths because Codex sets neither project-directory environment variable. Codex `SessionEnd` is
@@ -17,17 +21,11 @@ three seconds and only detaches work. Users approve changed project hook hashes 
 `/hooks`; the installer never edits the global trust store. Codex rollout `event_msg` user/agent
 records feed the same `flush.py` parser as Claude transcripts.
 
-**v2.2 security hardening:** Reparse-point (symlink + Windows junction) detection in `flush.py`
-and `compile.py` via `_platform._is_link_or_reparse()`. Transcript-path validation rejects symlink
-attacks. Stage isolation ensures the model never writes directly to the vault — promotion only
-happens after manifest diff validation. Provider abstraction in `model_runner.py` enables all four
-harnesses with graceful fallback. `encoding="utf-8", errors="replace"` on all `subprocess.run`
-calls prevents locale-dependent encoding crashes on Windows.
+### v2.3 graph-integrity addendum
 
-OpenCode integration uses the `plugins/opencode-brain/` Node.js plugin, which writes
-transcripts to `${HOME}/.opencode/.state/beyin/`. `install_opencode.py` copies the plugin to
-`~/.config/opencode/plugins/` and registers it in `opencode.jsonc`. Bridge script (`bridge.py`)
-and transcript reader (`read_transcript.py`) are copied to `.claude/scripts/` alongside the vault.
+v2.3 adds an Obsidian-aware graph scanner for broken wikilinks and advisory orphan-note
+reporting. Existing v2.2 vaults are upgradeable so the new script cannot be skipped by an
+already-current version stamp.
 
 Principles (binding):
 1. **Zero cost to the user.** Everything runs on the user's existing Claude subscription via `claude -p`. No API keys required anywhere. No paid services. Optional things stay optional and free.
@@ -48,7 +46,7 @@ avenoxbeyin/
 │   └── beyin-v2.md                (new public spec for avenox.lol/beyin.md — lane D)
 └── template/
     ├── CLAUDE.md                  (v2 router-style — lane O1)
-    ├── .beyin-version             (single line: `2.2.0` — OpenCode + reparse-point hardening)
+    ├── .beyin-version             (single line: `2.3.0` — graph-integrity release)
     ├── .gitignore                 (v2 — lane D; see §2.4)
     ├── .claude/
     │   ├── settings.json          (v2 hook wiring — lane C2)
@@ -124,7 +122,9 @@ Never store state anywhere else. Everything in `.state/` is gitignored.
 ```
 
 ### 2.5 `claude -p` invocation contract (scripts)
-- Binary discovery: `shutil.which("claude")`; if absent → write `.state/health.json` error `claude-cli-missing`, exit 0 quietly (doctor surfaces it).
+- Binary discovery follows the invoking harness: `claude` for Claude/Codex hooks, `agy` for the
+  Antigravity adapter. A missing runner writes the matching health error and exits quietly; the
+  doctor surfaces it.
 - Flush model: `--model haiku`. Compile model: `--model sonnet`. Use aliases, never dated model IDs.
 - Flush call: `claude -p --model haiku --output-format text` with the prompt passed via stdin, cwd = a temp dir OUTSIDE the vault (so project hooks/CLAUDE.md don't load), env includes `BEYIN_INVOKED_BY`. subprocess timeout 240s.
 - Compile call: `claude -p --model sonnet --output-format text --permission-mode acceptEdits --allowedTools "Read,Write,Edit,Glob,Grep"` with cwd = vault root (it must edit knowledge/), env includes `BEYIN_INVOKED_BY`, subprocess timeout 900s.
@@ -219,7 +219,7 @@ Same self-contained structure as v1's public spec but v2: FAST PATH = clone repo
 
 ### 6.3 README.md v2
 Rewrite: what it is (2 paragraphs, thesis "hafıza rica değil mekanizma"), v1→v2 comparison table, quickstart (3 commands), upgrade note, architecture ASCII diagram of the flush→daily→compile pipeline, cost honesty paragraph (same as 6.2), credits: "Bilgi derleme mimarisi Andrej Karpathy'nin LLM bilgi tabanı desenine dayanır" with gist link. MIT.
-### 6.4 `.beyin-version`: file containing `2.2.0`.
+### 6.4 `.beyin-version`: file containing `2.3.0`.
 
 ## 7. Integration gates (run by the architect after lanes land)
 1. `bash tests/hooks_test.sh` green.

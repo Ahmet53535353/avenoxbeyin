@@ -66,6 +66,7 @@ GÜVENLİK SINIRI
 - Yalnızca knowledge/index.md, knowledge/log.md,
   knowledge/concepts/**/*.md ve knowledge/connections/**/*.md yazılabilir.
 - Günlük girdi dosyasını değiştirme veya silme.
+- Shell komutu çalıştırma; yalnız çalışma alanındaki Markdown dosyalarını oku ve düzenle.
 
 --- BEGIN UNTRUSTED INDEX DATA ---
 {index_text}
@@ -268,11 +269,15 @@ def _path_within(path: Path, root: Path) -> bool:
 
 
 def _check_source(path: Path, vault_root: Path, directory: bool) -> None:
-    from _platform import check_source as _platform_check_source
-    try:
-        _platform_check_source(path, vault_root, directory)
-    except ValueError as exc:
-        raise PolicyError(str(exc))
+    source_stat = path.lstat()
+    if stat.S_ISLNK(source_stat.st_mode):
+        raise PolicyError(f"source-symlink:{path.relative_to(vault_root)}")
+    expected = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected(source_stat.st_mode):
+        raise PolicyError(f"source-type:{path.relative_to(vault_root)}")
+    resolved = path.resolve(strict=True)
+    if not _path_within(resolved, vault_root.resolve(strict=True)):
+        raise PolicyError(f"source-escape:{path.name}")
 
 
 def _copy_source_file(
@@ -545,18 +550,88 @@ def _promote_changes(
         _atomic_copy(source, destination)
 
 
-def _run_model(prompt: str, stage: Path) -> str | None:
-    import model_runner
-    stdout, error, provider = model_runner.run_model(
-        prompt=prompt,
-        cwd=stage,
-        mode="workspace",
-        timeout=900,
-        preferred=None,
-    )
-    if error is not None:
-        return error
+def _run_claude(prompt: str, stage: Path) -> str | None:
+    claude = shutil.which("claude")
+    if claude is None:
+        return "claude-cli-missing"
+
+    environment = os.environ.copy()
+    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    try:
+        result = subprocess.run(
+            [
+                claude,
+                "-p",
+                "--model",
+                "sonnet",
+                "--output-format",
+                "text",
+                "--safe-mode",
+                "--tools",
+                "Read,Write,Edit,Glob,Grep",
+                "--permission-mode",
+                "acceptEdits",
+                "--allowedTools",
+                "Read,Write,Edit,Glob,Grep",
+            ],
+            input=prompt,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            cwd=stage,
+            env=environment,
+            timeout=900,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "claude-timeout"
+    except OSError:
+        return "claude-exec-error"
+    if result.returncode != 0:
+        return f"claude-exit-{result.returncode}"
     return None
+
+
+def _run_antigravity(_prompt: str, stage: Path) -> str | None:
+    agy = shutil.which("agy")
+    if agy is None:
+        return "antigravity-cli-missing"
+
+    environment = os.environ.copy()
+    environment["BEYIN_INVOKED_BY"] = "beyin-scripts"
+    try:
+        result = subprocess.run(
+            [
+                agy,
+                "-p",
+                "Read .beyin-compile-prompt.md and carry out its instructions exactly.",
+                "--print-timeout",
+                "15m",
+                "--sandbox",
+            ],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            cwd=stage,
+            env=environment,
+            timeout=930,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "antigravity-timeout"
+    except OSError:
+        return "antigravity-exec-error"
+    if result.returncode != 0:
+        return f"antigravity-exit-{result.returncode}"
+    return None
+
+
+def _run_model(prompt: str, stage: Path) -> str | None:
+    if os.environ.get("BEYIN_MODEL_RUNNER") == "antigravity":
+        return _run_antigravity(prompt, stage)
+    return _run_claude(prompt, stage)
 
 
 def _compile_one(
@@ -576,7 +651,6 @@ def _compile_one(
         staged_daily = stage / "daily" / daily_path.name
         if _sha256(staged_daily) != expected_digest:
             return "source-changed", "source-changed-before-call"
-        before = _manifest(stage)
         index_text = (stage / "knowledge" / "index.md").read_text(
             encoding="utf-8"
         )
@@ -595,6 +669,15 @@ def _compile_one(
             daily_body,
             timestamp,
         )
+        # Antigravity 1.0 has no stdin input mode and Windows has a small
+        # command-line ceiling. Keep the full prompt inside the isolated stage
+        # and give the runner only a short instruction. The manifest includes
+        # this file before the call, so changing or deleting it fails closed.
+        (stage / ".beyin-compile-prompt.md").write_text(
+            prompt,
+            encoding="utf-8",
+        )
+        before = _manifest(stage)
         error = _run_model(prompt, stage)
         if error is not None:
             return error, error

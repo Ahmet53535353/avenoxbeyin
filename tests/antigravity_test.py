@@ -1,7 +1,10 @@
-"""Tests for Google Antigravity integration."""
+#!/usr/bin/env python3
+"""Regression tests for the Antigravity adapter and shared model runner."""
 
 from __future__ import annotations
 
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -9,156 +12,205 @@ import subprocess
 import sys
 import tempfile
 import unittest
-
-sys.dont_write_bytecode = True
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-sys.path.insert(0, str(REPO_ROOT / "template" / ".agents" / "scripts"))
-
-import install_antigravity
-import flush
+from unittest import mock
 
 
-class AntigravityIntegrationTest(unittest.TestCase):
-    def test_preflight(self):
-        report = install_antigravity.check_preflight()
-        self.assertTrue(report["ok"])
-        self.assertTrue(report["template_exists"])
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "template" / ".claude" / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 
-    def test_clean_install_and_placeholders(self):
-        with tempfile.TemporaryDirectory(prefix="test-agy-vault-") as temp_dir:
-            vault_path = Path(temp_dir) / "TestOS"
-            success = install_antigravity.install_vault(
-                vault_path=vault_path,
-                user_name="TestUser",
-                user_bio="AI Researcher",
-                companion="Atlas",
-                os_name="TestOS",
-            )
-            self.assertTrue(success)
-            self.assertTrue(vault_path.is_dir())
+import flush  # noqa: E402
+import antigravity_hooks as hooks  # noqa: E402
+import render_antigravity_hooks as renderer  # noqa: E402
 
-            # Verify files exist
-            gemini_md = vault_path / "GEMINI.md"
-            self.assertTrue(gemini_md.is_file())
-            content = gemini_md.read_text(encoding="utf-8")
-            self.assertIn("TestOS", content)
-            self.assertIn("Atlas", content)
-            self.assertIn("TestUser", content)
-            self.assertNotIn("{{COMPANION}}", content)
-            self.assertNotIn("{{USER_NAME}}", content)
 
-            # Verify hooks.json
-            hooks_json = vault_path / ".agents" / "hooks.json"
-            self.assertTrue(hooks_json.is_file())
-            data = json.loads(hooks_json.read_text(encoding="utf-8"))
-            self.assertIn("avenoxbeyin-context", data)
-            self.assertIn("avenoxbeyin-flush", data)
+def _load_compile():
+    spec = importlib.util.spec_from_file_location(
+        "beyin_compile_antigravity_test", SCRIPTS / "compile.py"
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("compile module could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    def test_pre_invocation_hook_output(self):
-        with tempfile.TemporaryDirectory(prefix="test-agy-hook-") as temp_dir:
-            vault_path = Path(temp_dir) / "TestOS"
-            install_antigravity.install_vault(
-                vault_path=vault_path,
-                user_name="TestUser",
-                user_bio="AI Researcher",
-                companion="Atlas",
-                os_name="TestOS",
-            )
-            pre_inv_script = vault_path / ".agents" / "scripts" / "pre_invocation.py"
 
-            payload = {
-                "conversationId": "test-conv-1",
-                "workspacePaths": [str(vault_path)],
-                "invocationNum": 1,
-            }
-            res = subprocess.run(
-                [sys.executable, str(pre_inv_script)],
-                input=json.dumps(payload),
-                text=True,
-                capture_output=True,
-                encoding="utf-8",
-            )
-            self.assertEqual(res.returncode, 0, f"Error: {res.stderr}")
-            out_json = json.loads(res.stdout)
-            self.assertIn("injectSteps", out_json)
-            ephemeral = out_json["injectSteps"][0]["ephemeralMessage"]
-            self.assertIn("AVENOXBEYIN HAFIZA KÖPRÜSÜ", ephemeral)
+COMPILE = _load_compile()
 
-    def test_antigravity_transcript_parsing(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-        ) as tf:
-            lines = [
-                {"step_index": 1, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "Merhaba!"},
-                {"step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "Selam, nasıl yardımcı olabilirim?"},
+
+class AntigravityTest(unittest.TestCase):
+    def test_transcript_extracts_only_user_and_planner_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            transcript = Path(temporary) / "transcript.jsonl"
+            records = [
+                {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "ilk soru"},
+                {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "ilk cevap"},
+                {"type": "PLANNER_RESPONSE", "source": "MODEL", "toolCall": {"name": "x"}},
+                {"type": "TOOL_RESULT", "content": "gizli araç çıktısı"},
+                {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "son soru"},
+                {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "son cevap"},
             ]
-            for l in lines:
-                tf.write(json.dumps(l) + "\n")
-            tf_path = Path(tf.name)
-
-        try:
-            turns = flush.read_transcript(tf_path)
-            self.assertEqual(len(turns), 2)
-            self.assertEqual(turns[0], ("user", "Merhaba!"))
-            self.assertEqual(turns[1], ("assistant", "Selam, nasıl yardımcı olabilirim?"))
-        finally:
-            tf_path.unlink(missing_ok=True)
-
-    def test_recursion_guard(self):
-        with tempfile.TemporaryDirectory(prefix="test-agy-guard-") as temp_dir:
-            vault_path = Path(temp_dir) / "TestOS"
-            install_antigravity.install_vault(
-                vault_path=vault_path,
-                user_name="TestUser",
-                user_bio="AI Researcher",
-                companion="Atlas",
-                os_name="TestOS",
-            )
-            pre_inv = vault_path / ".agents" / "scripts" / "pre_invocation.py"
-            stop_script = vault_path / ".agents" / "scripts" / "stop.py"
-
-            env = os.environ.copy()
-            env["BEYIN_INVOKED_BY"] = "beyin-scripts"
-
-            # PreInvocation should return empty JSON immediately
-            res1 = subprocess.run(
-                [sys.executable, str(pre_inv)],
-                input=json.dumps({"invocationNum": 1}),
-                text=True,
-                capture_output=True,
-                env=env,
+            transcript.write_text(
+                "".join(json.dumps(item) + "\n" for item in records),
                 encoding="utf-8",
             )
-            self.assertEqual(res1.returncode, 0)
-            self.assertEqual(json.loads(res1.stdout), {})
-
-            # Stop should return empty JSON immediately
-            res2 = subprocess.run(
-                [sys.executable, str(stop_script)],
-                input=json.dumps({}),
-                text=True,
-                capture_output=True,
-                env=env,
-                encoding="utf-8",
-            )
-            self.assertEqual(res2.returncode, 0)
-            self.assertEqual(json.loads(res2.stdout), {})
-
-    def test_summary_validation(self):
-        valid = (
-            "## Bağlam\nTest bağlamı\n\n"
-            "## Önemli Konuşmalar\nTest konuşma\n\n"
-            "## Alınan Kararlar\nTest karar\n\n"
-            "## Öğrenilenler\nTest öğrenilen\n\n"
-            "## Yapılacaklar\nTest yapılacak"
+            turns = flush.read_transcript(transcript)
+        self.assertEqual(
+            turns,
+            [
+                ("user", "ilk soru"),
+                ("assistant", "ilk cevap"),
+                ("user", "son soru"),
+                ("assistant", "son cevap"),
+            ],
         )
-        self.assertTrue(flush.validate_summary(valid))
+        self.assertEqual(hooks._latest_exchange(turns), turns[-2:])
 
-        invalid = "## Bağlam\nSadece bir bölüm var"
-        self.assertFalse(flush.validate_summary(invalid))
+    def test_renderer_is_absolute_idempotent_and_preserves_unrelated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            vault = Path(temporary) / "vault with spaces"
+            scripts = vault / ".claude" / "scripts"
+            scripts.mkdir(parents=True)
+            resolved_vault = vault.resolve()
+            (scripts / "antigravity_hooks.py").write_text("# adapter\n", encoding="utf-8")
+            agents = vault / ".agents"
+            agents.mkdir()
+            existing = {"user-hook": {"Stop": [{"command": "keep-me"}]}}
+            (agents / "hooks.json").write_text(json.dumps(existing), encoding="utf-8")
+
+            first = renderer.write(vault, "posix", Path(sys.executable))
+            first_body = first.read_text(encoding="utf-8")
+            second = renderer.write(vault, "posix", Path(sys.executable))
+            second_body = second.read_text(encoding="utf-8")
+            payload = json.loads(second.read_text(encoding="utf-8"))
+
+        self.assertEqual(first_body, second_body)
+        self.assertEqual(payload["user-hook"], existing["user-hook"])
+        managed = payload["avenox-beyin"]
+        self.assertEqual(set(managed), {"PreInvocation", "Stop"})
+        for event, action in (("PreInvocation", "pre-invocation"), ("Stop", "stop")):
+            command = managed[event][0]["command"]
+            self.assertIn(str(resolved_vault), command)
+            self.assertIn(action, command)
+
+    def test_pre_invocation_uses_zero_based_first_call_and_ephemeral_message(self) -> None:
+        calls = []
+
+        def fake_runner(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {"hookSpecificOutput": {"additionalContext": "kalıcı bağlam"}}
+                ),
+                stderr="",
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                mock.patch.dict(os.environ, {}, clear=True),
+                mock.patch.object(hooks, "STATE_DIR", Path(temporary)),
+            ):
+                output = hooks.pre_invocation(
+                    {"invocationNum": 0, "conversationId": "conversation-1"},
+                    runner=fake_runner,
+                )
+                duplicate = hooks.pre_invocation(
+                    {"invocationNum": 0, "conversationId": "conversation-1"},
+                    runner=fake_runner,
+                )
+                later = hooks.pre_invocation(
+                    {"invocationNum": 1, "conversationId": "conversation-1"},
+                    runner=fake_runner,
+                )
+
+        self.assertEqual(output, {"injectSteps": [{"ephemeralMessage": "kalıcı bağlam"}]})
+        self.assertEqual(duplicate, {})
+        self.assertEqual(later, {})
+        self.assertEqual(len(calls), 1)
+        translated = json.loads(calls[0][1]["input"])
+        self.assertEqual(translated["session_id"], "conversation-1")
+        self.assertEqual(calls[0][1]["env"]["BEYIN_MODEL_RUNNER"], "antigravity")
+
+    def test_stop_contract_only_spawns_after_fully_idle(self) -> None:
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(hooks, "_spawn_worker") as spawn,
+        ):
+            self.assertEqual(hooks.stop({"fullyIdle": False}), {"decision": "stop"})
+            self.assertEqual(hooks.stop({"fullyIdle": True}), {"decision": "stop"})
+        spawn.assert_called_once_with({"fullyIdle": True})
+
+    def test_worker_records_digest_only_after_success_and_deduplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            vault = root / "vault"
+            scripts = vault / ".claude" / "scripts"
+            scripts.mkdir(parents=True)
+            transcript = root / "transcript.jsonl"
+            transcript.write_text(
+                json.dumps({"type": "USER_INPUT", "content": "karar"})
+                + "\n"
+                + json.dumps({"type": "PLANNER_RESPONSE", "content": "uygulandı"})
+                + "\n",
+                encoding="utf-8",
+            )
+            calls = []
+
+            def fake_run(command, **_kwargs):
+                calls.append(command)
+                hook_path = Path(command[command.index("--hook-input") + 1])
+                session_id = json.loads(hook_path.read_text(encoding="utf-8"))["session_id"]
+                flush_state = hooks._flush_state_path(session_id)
+                flush_state.write_text('{"status":"ok"}\n', encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+
+            payload = {"conversationId": "c1", "transcriptPath": str(transcript)}
+            with (
+                mock.patch.object(hooks, "STATE_DIR", state),
+                mock.patch.object(hooks, "VAULT_ROOT", vault),
+                mock.patch.object(hooks, "SCRIPT_DIR", scripts),
+                mock.patch.object(hooks.subprocess, "run", side_effect=fake_run),
+            ):
+                hooks._run_worker(payload)
+                hooks._run_worker(payload)
+                state_path = hooks._conversation_state_path("c1")
+
+            self.assertEqual(len(calls), 1)
+            saved = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertRegex(saved["last_turn_digest"], r"^[0-9a-f]{64}$")
+
+    def test_antigravity_runners_use_supported_headless_flags(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="özet\n", stderr="")
+        with tempfile.TemporaryDirectory() as temporary:
+            vault = Path(temporary) / "vault"
+            vault.mkdir()
+            with (
+                mock.patch.object(flush.shutil, "which", return_value="/usr/bin/agy"),
+                mock.patch.object(flush.subprocess, "run", return_value=completed) as run,
+            ):
+                output, error = flush._run_antigravity("özetle", vault)
+            self.assertEqual((output, error), ("özet", None))
+            args = run.call_args.args[0]
+            self.assertIn("-p", args)
+            self.assertIn("--print-timeout", args)
+            self.assertIn("--sandbox", args)
+            self.assertNotIn("--effort", args)
+
+            stage = Path(temporary) / "stage"
+            stage.mkdir()
+            (stage / ".beyin-compile-prompt.md").write_text("prompt", encoding="utf-8")
+            with (
+                mock.patch.object(COMPILE.shutil, "which", return_value="/usr/bin/agy"),
+                mock.patch.object(COMPILE.subprocess, "run", return_value=completed) as run,
+            ):
+                self.assertIsNone(COMPILE._run_antigravity("ignored", stage))
+            args = run.call_args.args[0]
+            self.assertNotIn("--dangerously-skip-permissions", args)
+            self.assertIn("--sandbox", args)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

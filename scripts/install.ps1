@@ -28,6 +28,7 @@ param(
     [string]$UserBio,
     [string]$Companion,
     [string]$OsName,
+    [ValidateSet('Claude', 'Antigravity')][string]$Harness = 'Claude',
     [switch]$PreflightOnly
 )
 
@@ -90,10 +91,22 @@ function Find-BeyinPwsh {
 }
 
 
+function Find-BeyinAgy {
+    foreach ($cmd in @(Get-Command agy -All -ErrorAction SilentlyContinue)) {
+        if (-not $cmd.Source) { continue }
+        $ok = Test-BeyinDependency -Path $cmd.Source `
+            -Arguments @('--version') -ExpectPattern '^\d+\.\d+'
+        if ($ok) { return $cmd.Source }
+    }
+    return $null
+}
+
+
 function Invoke-BeyinPreflight {
     <# Returns @{ Ok; Missing; Python; Pwsh }. Touches nothing on disk. #>
+    param([ValidateSet('Claude', 'Antigravity')][string]$Harness = 'Claude')
     $missing = New-Object System.Collections.ArrayList
-    $result = @{ Ok = $true; Missing = @(); Python = $null; Pwsh = $null }
+    $result = @{ Ok = $true; Missing = @(); Python = $null; Pwsh = $null; Runner = $null }
 
     $pwshPath = Find-BeyinPwsh
     if ($pwshPath) {
@@ -120,13 +133,23 @@ function Invoke-BeyinPreflight {
         [void]$missing.Add("Git bulunamadi`n  winget install --id Git.Git --source winget")
     }
 
-    $claude = Get-Command claude -ErrorAction SilentlyContinue
-    $claudeOk = $false
-    if ($claude -and $claude.Source) {
-        $claudeOk = Test-BeyinDependency -Path $claude.Source -Arguments @('--version') -ExpectPattern '\(Claude Code\)'
+    if ($Harness -eq 'Antigravity') {
+        $agyPath = Find-BeyinAgy
+        if ($agyPath) { $result.Runner = $agyPath }
+        else {
+            [void]$missing.Add("Antigravity CLI bulunamadi (agy)`n  https://antigravity.google/docs/cli/")
+        }
     }
-    if (-not $claudeOk) {
-        [void]$missing.Add("Claude Code bulunamadi`n  https://claude.com/claude-code")
+    else {
+        $claude = Get-Command claude -ErrorAction SilentlyContinue
+        $claudeOk = $false
+        if ($claude -and $claude.Source) {
+            $claudeOk = Test-BeyinDependency -Path $claude.Source -Arguments @('--version') -ExpectPattern '\(Claude Code\)'
+        }
+        if ($claudeOk) { $result.Runner = $claude.Source }
+        else {
+            [void]$missing.Add("Claude Code bulunamadi`n  https://claude.com/claude-code")
+        }
     }
 
     $result.Missing = $missing.ToArray()
@@ -142,6 +165,7 @@ function Write-BeyinPreflightReport {
         Write-Host "On kontrol gecti."
         Write-Host "  pwsh   : $($Report.Pwsh)"
         Write-Host "  python : $($Report.Python)"
+        Write-Host "  runner : $($Report.Runner)"
         return
     }
 
@@ -237,7 +261,7 @@ if ($PreflightOnly) { return }
 # Everything below runs only after the gate passes.
 # ---------------------------------------------------------------------------
 
-$report = Invoke-BeyinPreflight
+$report = Invoke-BeyinPreflight -Harness $Harness
 Write-BeyinPreflightReport -Report $report
 if (-not $report.Ok) { exit 1 }
 
@@ -323,6 +347,12 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Codex hooks.json üretilemedi.'
 }
 
+& $report.Python (Join-Path $VaultPath '.claude\scripts\render_antigravity_hooks.py') `
+    --vault $VaultPath --platform windows | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw 'Antigravity hooks.json üretilemedi.'
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $VaultPath '.claude\scripts\.state') | Out-Null
 
 Merge-BeyinHooks -SettingsPath (Join-Path $VaultPath '.claude\settings.json') `
@@ -343,4 +373,5 @@ Write-Host "Kurulum tamam: $VaultPath"
 Write-Host "  motor : .claude\scripts  (python: $($report.Python))"
 Write-Host "  kanca : 4 adet, .claude\settings.json icinde kayitli"
 Write-Host "  codex : AGENTS.md + .agents\skills + .codex\hooks.json"
+Write-Host "  antigravity : .agents\hooks.json (ortak motor adaptoru)"
 exit 0

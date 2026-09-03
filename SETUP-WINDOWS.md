@@ -1,6 +1,6 @@
 # SETUP-WINDOWS.md: Activate this second brain on native Windows
 
-> You are Claude Code, run from inside a freshly cloned `avenoxbeyin` repo on
+> You are Claude Code or Google Antigravity, run from inside a freshly cloned `avenoxbeyin` repo on
 > **native Windows** — not WSL. The user wants their own AI second brain.
 > The scaffold lives in `./template/`; the mechanical work lives in
 > `./scripts/install.ps1`. Speak **Turkish** to the user. This runbook is in
@@ -24,8 +24,8 @@
 5. **Be the demo.** Narrate in short Turkish lines as you go: "Bağımlılıkları
    kontrol ediyorum...", "Vault iskeletini kuruyorum...", "Kancaları
    bağlıyorum...". Short sentences, no walls of text.
-6. **Everything is free.** No API key anywhere. The summarizer and the compiler
-   run on the user's existing Claude subscription through `claude -p`.
+6. **No direct API key.** The summarizer and compiler use the user's existing
+   Claude Code or Antigravity login through `claude -p` or `agy -p`.
 
 ## PHASE 0: Dependency gate
 
@@ -35,8 +35,14 @@ Run this first. It writes nothing.
 powershell -NoProfile -Command ". .\scripts\install.ps1 -PreflightOnly; Write-BeyinPreflightReport -Report (Invoke-BeyinPreflight)"
 ```
 
+Antigravity içinden kuruyorsan aynı kontrolü şu varyantla çalıştır:
+
+```powershell
+powershell -NoProfile -Command ". .\scripts\install.ps1 -PreflightOnly; Write-BeyinPreflightReport -Report (Invoke-BeyinPreflight -Harness Antigravity)"
+```
+
 It checks four things by **running** each one: PowerShell 7, Python 3, Git,
-Claude Code. Presence is not enough — on Windows `python3.exe` exists as a
+seçilen model CLI. Presence is not enough — on Windows `python3.exe` exists as a
 Microsoft Store shortcut even with Python uninstalled.
 
 Report the result to the user in Turkish.
@@ -67,7 +73,7 @@ off by default, and the compiler builds article filenames from titles.
 ```powershell
 pwsh -NoProfile -File .\scripts\install.ps1 `
   -VaultPath "<VAULT_PATH>" -UserName "<USER_NAME>" -UserBio "<USER_BIO>" `
-  -Companion "<COMPANION>" -OsName "<OS_NAME>"
+  -Companion "<COMPANION>" -OsName "<OS_NAME>" -Harness "<Claude|Antigravity>"
 ```
 
 Exit codes: `0` ok · `1` preflight failed · `2` missing parameter ·
@@ -83,9 +89,10 @@ Run all three and report each result:
 Test-Path "<VAULT_PATH>\.claude\scripts\flush.py"
 (Get-Content "<VAULT_PATH>\.claude\settings.json" -Raw | ConvertFrom-Json).hooks.PSObject.Properties.Name.Count
 Test-Path "<VAULT_PATH>\.claude\scripts\.state"
+Test-Path "<VAULT_PATH>\.agents\hooks.json"
 ```
 
-Expected: `True`, `4`, `True`.
+Expected: `True`, `4`, `True`, `True`.
 
 ## PHASE 4: First-run report (Turkish)
 

@@ -20,7 +20,12 @@ import uuid
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SOURCE_SCRIPTS = REPO_ROOT / "template" / ".claude" / "scripts"
+SOURCE_SCRIPTS = Path(
+    os.environ.get(
+        "BEYIN_TEST_SOURCE_SCRIPTS",
+        REPO_ROOT / "template" / ".claude" / "scripts",
+    )
+).resolve()
 sys.path.insert(0, str(SOURCE_SCRIPTS))
 VALID_SUMMARY = """## Bağlam
 Kalıcı bağlam.
@@ -47,6 +52,7 @@ FLUSH = load_module("beyin_flush_test", SOURCE_SCRIPTS / "flush.py")
 CODEX_RENDERER = load_module(
     "beyin_codex_renderer_test", SOURCE_SCRIPTS / "render_codex_hooks.py"
 )
+GRAF = load_module("beyin_graf_test", SOURCE_SCRIPTS / "graf_kontrol.py")
 
 
 class ScriptsTest(unittest.TestCase):
@@ -141,7 +147,18 @@ if is_compile:
         else:
             file_to_dir.mkdir()
 else:
-    output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
+    sequence = os.environ.get("BEYIN_TEST_OUTPUT_SEQUENCE")
+    if sequence:
+        outputs = json.loads(sequence)
+        state_path = Path(os.environ["BEYIN_TEST_SEQUENCE_STATE"])
+        try:
+            index = int(state_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            index = 0
+        state_path.write_text(str(index + 1), encoding="utf-8")
+        output = outputs[min(index, len(outputs) - 1)]
+    else:
+        output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
     if output:
         print(output)
 
@@ -298,6 +315,36 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             {"type": "event_msg", "payload": {"type": "user_message", "message": "Codex kullanıcı mesajı"}},
             {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
             {"type": "event_msg", "payload": {"type": "agent_message", "message": "Codex yanıtı"}},
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "UserMessage",
+                        "content": [{"type": "text", "text": "Yeni kullanıcı mesajı"}],
+                    },
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "AgentMessage",
+                        "content": [{"type": "Text", "text": "Yeni ajan yanıtı"}],
+                    },
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "Reasoning",
+                        "content": [{"type": "Text", "text": "gizli"}],
+                    },
+                },
+            },
             {"type": "event_msg", "payload": {"type": "task_started", "message": "yoksay"}},
         ]
         transcript.write_text(
@@ -309,6 +356,8 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             [
                 ("user", "Codex kullanıcı mesajı"),
                 ("assistant", "Codex yanıtı"),
+                ("user", "Yeni kullanıcı mesajı"),
+                ("assistant", "Yeni ajan yanıtı"),
             ],
         )
 
@@ -425,9 +474,48 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
 
         second = self._run_flush(hook, BEYIN_TEST_OUTPUT=VALID_SUMMARY)
         self.assertEqual(second.returncode, 0)
-        self.assertEqual(len(self._stub_calls("haiku")), 2)
+        self.assertEqual(len(self._stub_calls("haiku")), 3)
         daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
         self.assertEqual(daily_body.count("### Oturum ("), 1)
+
+    def test_summary_preamble_is_trimmed_and_reported(self) -> None:
+        transcript = self._write_transcript([("user", "kalıcı karar")])
+        hook = self._write_hook("preamble-session", transcript)
+        preamble = "Şüpheli içerik uyarısı; şema gövdesi aşağıdadır.\n\n"
+        result = self._run_flush(
+            hook,
+            BEYIN_TEST_OUTPUT=preamble + VALID_SUMMARY,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
+        self.assertNotIn(preamble.strip(), daily_body)
+        self.assertIn(VALID_SUMMARY, daily_body)
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("warn:summary-preamble-trimmed", health["warnings"])
+
+    def test_schema_mismatch_retries_once_then_appends(self) -> None:
+        transcript = self._write_transcript([("user", "kalıcı karar")])
+        hook = self._write_hook("schema-retry-session", transcript)
+        result = self._run_flush(
+            hook,
+            BEYIN_TEST_OUTPUT_SEQUENCE=json.dumps(
+                ["## Bağlam\nEksik çıktı", VALID_SUMMARY],
+                ensure_ascii=False,
+            ),
+            BEYIN_TEST_SEQUENCE_STATE=str(self.root / "summary-sequence"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._stub_calls("haiku")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("Bu ikinci şema denemesidir", calls[1]["prompt"])
+        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
+        self.assertEqual(daily_body.count("### Oturum ("), 1)
+        health = json.loads(
+            (self.state / "health.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("warn:summary-schema-retried", health["warnings"])
 
     def test_concurrent_flushes_make_one_call_and_one_daily_entry(self) -> None:
         transcript = self._write_transcript([("user", "eşzamanlı oturum")])
@@ -985,6 +1073,87 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         )
         self.assertFalse(_platform._is_link_or_reparse(safe_path))
         self.assertTrue(_platform.path_within_vault(safe_path, self.root))
+
+
+class GrafKontrolTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="beyin-graf-tests-")
+        self.vault = Path(self.temporary.name)
+        self.addCleanup(self.temporary.cleanup)
+
+    def write(self, rel: str, text: str) -> None:
+        path = self.vault / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_reports_broken_links_and_orphans(self) -> None:
+        self.write("a.md", "[[b]] ve [[yok-boyle]]")
+        self.write("b.md", "govde")
+        self.write("c.md", "kimse bana baglanmiyor")
+        total, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(total, 3)
+        self.assertEqual([target for _, target in broken], ["yok-boyle"])
+        self.assertEqual([str(o) for o in orphans], ["a.md", "c.md"])
+
+    def test_resolves_full_paths_headings_and_aliases(self) -> None:
+        # Tablo icindeki [[yol\|takma-ad]] kacisi ve [[not#baslik]] kirik sayilmamali.
+        self.write("alan/🏰 300-Projects/proje.md", "govde")
+        self.write(
+            "hub.md",
+            "[[🏰 300-Projects/proje]] [[proje#baslik]] "
+            "[[🏰 300-Projects/proje\\|takma]]",
+        )
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertNotIn(
+            "alan/🏰 300-Projects/proje.md", [str(o) for o in orphans]
+        )
+
+    def test_hook_injected_and_skipped_paths_are_not_orphans(self) -> None:
+        # Kanca ile enjekte edilen hafiza dosyalari ve muaf klasorler yetim sayilmaz.
+        self.write("🔮 850-Companion/Journal.md", "gunluk")
+        self.write("📋 Templates/Note.md", "sablon")
+        self.write("daily/2026-01-01.md", "log")
+        self.write("📦 900-Archive/eski.md", "arsiv")
+        total, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertEqual(orphans, [])
+        self.assertEqual(total, 3)  # 900-Archive hic taranmaz
+
+    def test_folder_and_external_targets_are_ignored(self) -> None:
+        self.write("hub.md", "[[🏰 300-Projects/]] [[https://ornek.com]]")
+        _, broken, _ = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+
+    def test_code_comments_and_inline_examples_do_not_create_edges(self) -> None:
+        self.write(
+            "hub.md",
+            "`[[inline-yok]]`\n```md\n[[fence-yok]]\n```\n%% [[yorum-yok]] %%",
+        )
+        _, broken, _ = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+
+    def test_attachment_casefold_and_relative_targets_resolve(self) -> None:
+        self.write(
+            "alt/hub.md",
+            "![[Görsel.PNG]] [[../Notlar/KARAR]]",
+        )
+        attachment = self.vault / "Görsel.PNG"
+        attachment.write_bytes(b"png placeholder")
+        self.write("Notlar/Karar.md", "govde")
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        self.assertNotIn("Notlar/Karar.md", [str(item) for item in orphans])
+
+    def test_duplicate_basenames_do_not_create_false_orphans(self) -> None:
+        self.write("hub.md", "[[karar]]")
+        self.write("bir/karar.md", "ilk")
+        self.write("iki/karar.md", "ikinci")
+        _, broken, orphans = GRAF.tara(self.vault)
+        self.assertEqual(broken, [])
+        orphan_names = [str(item) for item in orphans]
+        self.assertNotIn("bir/karar.md", orphan_names)
+        self.assertNotIn("iki/karar.md", orphan_names)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# SETUP.md v2.1: Activate this second brain (Claude Code or Codex runbook)
+# SETUP.md v2.3: Activate this second brain (Claude Code or Codex runbook)
 
 > You are Claude Code or Codex, run from inside a freshly cloned `avenoxbeyin` repo. The user wants their
 > own AI second brain, or wants to upgrade the one they already have. The scaffold lives in
@@ -84,8 +84,8 @@ Decide:
 | --- | --- |
 | `TARAMA TAMAM: 0 aday` | **MODE A, sıfırdan kurulum** (PHASE 0'a git) |
 | Aday var, `.beyin-version` yok | **MODE B, v1'den yükseltme** (PHASE U1'e git) |
-| Aday var, `.beyin-version` = `2.0.0` | **MODE B**, v2.1 harness-neutral yükseltmesi |
-| Aday var, `.beyin-version` = `2.1.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
+| Aday var, `.beyin-version` = `2.0.0`, `2.1.0` veya `2.2.0` | **MODE B**, v2.3 yükseltmesi |
+| Aday var, `.beyin-version` = `2.3.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
 | Aday var, `.beyin-version` başka bir değer | Kullanıcıya göster, ne yapılacağını sor |
 
 Tell the user which mode you picked and why, in one Turkish sentence. Never guess silently.
@@ -205,6 +205,8 @@ ln -s "../.claude/skills" "{{VAULT_PATH}}/.agents/skills"
 ln -s "../.claude/hooks" "{{VAULT_PATH}}/.codex/hooks"
 python3 "{{VAULT_PATH}}/.claude/scripts/render_codex_hooks.py" \
   --vault "{{VAULT_PATH}}" --platform posix
+python3 "{{VAULT_PATH}}/.claude/scripts/render_antigravity_hooks.py" \
+  --vault "{{VAULT_PATH}}" --platform posix
 ```
 
 No globs in the chmod. Under zsh an unmatched `*.sh` aborts the whole command with
@@ -218,12 +220,13 @@ Verify the v2 pieces landed:
 ```bash
 cd "{{VAULT_PATH}}"
 ls .claude/hooks/          # session-start.sh prompt-counter.sh session-end.sh pre-compact.sh lib.sh
-ls .claude/scripts/        # flush.py compile.py
+ls .claude/scripts/        # shared engine + Codex/Antigravity adapters
 ls .claude/skills/         # beyin-doktor gecmis-import
 ls -l AGENTS.md .agents/skills .codex/hooks
 python3 -m json.tool .codex/hooks.json >/dev/null && echo "Codex kancaları ✓"
+python3 -m json.tool .agents/hooks.json >/dev/null && echo "Antigravity kancaları ✓"
 ls -d daily knowledge/concepts knowledge/connections
-cat .beyin-version         # 2.1.0
+cat .beyin-version         # 2.3.0
 ```
 
 ## PHASE 3: Personalize (substitute placeholders)
@@ -379,6 +382,7 @@ test -f "{{VAULT_PATH}}/CLAUDE.md" && echo "CLAUDE.md ✓"
 test -L "{{VAULT_PATH}}/AGENTS.md" && echo "AGENTS.md ortak router ✓"
 test -L "{{VAULT_PATH}}/.agents/skills" && echo "Codex skill store ✓"
 python3 -m json.tool "{{VAULT_PATH}}/.codex/hooks.json" >/dev/null && echo "Codex hooks ✓"
+python3 -m json.tool "{{VAULT_PATH}}/.agents/hooks.json" >/dev/null && echo "Antigravity hooks ✓"
 test -f "{{VAULT_PATH}}/🔮 850-Companion/Last-Session.md" && echo "hafıza ✓"
 test -f "{{VAULT_PATH}}/.beyin-version" && echo "sürüm $(cat "{{VAULT_PATH}}/.beyin-version") ✓"
 test -d "$HOME/Desktop/{{OS_NAME}}.app" && echo "launcher 🧠 ✓"
@@ -481,7 +485,7 @@ Ask only what `--stage check` actually asked for.
    Yes → pass `--confirm-rename`.
    No → **stop the upgrade here.** Say in Turkish that the vault stays on v1, nothing was changed
    and no version was stamped. Do not run `apply`. Do not write `.beyin-version`. A vault stamped
-   `2.1.0` whose memory injection cannot find the folder is worse than an honest older vault.
+   `2.3.0` whose memory injection cannot find the folder is worse than an honest older vault.
 
 2. **`settings.local.json` içindeki v1 kancaları.** If the check found any:
    > "Eski kurulumda kancalar `settings.local.json` içine yazılmış. v2 bunları `settings.json`
@@ -505,7 +509,7 @@ Pass only the confirmation flags the check asked for. Read the numbered output b
 | Çıkış kodu | Anlamı | Ne yapacaksın |
 | --- | --- | --- |
 | `0` | apply tamam, sürüm damgası HENÜZ yazılmadı | PHASE U4'e geç |
-| `3` | vault zaten `2.1.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
+| `3` | vault zaten `2.3.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
 | `10` | yeniden adlandırma onayı eksik | PHASE U2'ye dön |
 | `11` | yerel kanca temizliği onayı eksik | PHASE U2'ye dön |
 | `1` | sert hata, ekranda `HATA:` satırı var | DUR. Kullanıcıya oku, düzelt, tekrar çalıştır |

@@ -396,7 +396,7 @@ test_missing_local_settings_completes() {
   git -C "$CASE_VAULT" rm -q -- .claude/settings.local.json
   git -C "$CASE_VAULT" -c commit.gpgsign=false commit -q -m "settings.local yok"
   full_chain || return 1
-  [ "$(sed -n '1p' "$CASE_VAULT/.beyin-version")" = "2.2.0" ]
+  [ "$(sed -n '1p' "$CASE_VAULT/.beyin-version")" = "2.3.0" ]
 }
 
 test_gitignore_rule_is_effective() {
