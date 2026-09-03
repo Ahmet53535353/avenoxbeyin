@@ -1,4 +1,4 @@
-# SETUP.md v2.3: Activate this second brain (Claude Code or Codex runbook)
+# SETUP.md v2.1: Activate this second brain (Codex-native runbook)
 
 > You are Claude Code or Codex, run from inside a freshly cloned `avenoxbeyin` repo. The user wants their
 > own AI second brain, or wants to upgrade the one they already have. The scaffold lives in
@@ -20,7 +20,7 @@
    go: "Vault iskeletini kuruyorum...", "Hafıza motorunu bağlıyorum...", "Derleyiciyi yerine
    koyuyorum...". Short sentences, no walls of text.
 7. **Everything is free.** No API key is required anywhere. The background summarizer and the
-   compiler run on the user's existing Claude subscription through `claude -p`.
+   compiler run on the user's existing Codex setup through `codex exec`.
 
 Placeholders you must resolve:
 `{{OS_NAME}}` · `{{USER_NAME}}` · `{{USER_BIO}}` · `{{COMPANION}}` · `{{VAULT_PATH}}` ·
@@ -84,8 +84,8 @@ Decide:
 | --- | --- |
 | `TARAMA TAMAM: 0 aday` | **MODE A, sıfırdan kurulum** (PHASE 0'a git) |
 | Aday var, `.beyin-version` yok | **MODE B, v1'den yükseltme** (PHASE U1'e git) |
-| Aday var, `.beyin-version` = `2.0.0`, `2.1.0` veya `2.2.0` | **MODE B**, v2.3 yükseltmesi |
-| Aday var, `.beyin-version` = `2.3.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
+| Aday var, `.beyin-version` = `2.0.0` | **MODE B**, v2.1 harness-neutral yükseltmesi |
+| Aday var, `.beyin-version` = `2.1.0` | Zaten güncel. Sadece `beyin-doktor` çalıştır, eksikleri kapat |
 | Aday var, `.beyin-version` başka bir değer | Kullanıcıya göster, ne yapılacağını sor |
 
 Tell the user which mode you picked and why, in one Turkish sentence. Never guess silently.
@@ -171,10 +171,10 @@ else
   echo "🔴 python3 YOK"
   BEYIN_MISSING=$((BEYIN_MISSING + 1))
 fi
-if command -v claude >/dev/null 2>&1; then
-  echo "claude CLI ✓ $(command -v claude)"
+if command -v codex >/dev/null 2>&1; then
+  echo "codex CLI ✓ $(codex --version 2>&1 | head -1)"
 else
-  echo "🔴 claude CLI YOK"
+  echo "🔴 codex CLI YOK"
   BEYIN_MISSING=$((BEYIN_MISSING + 1))
 fi
 echo "ONKOSUL SONUC: $BEYIN_MISSING eksik"
@@ -185,6 +185,8 @@ summarizer and the compiler run on, and it is the entire v2 thesis. If it is mis
 
 - macOS: `xcode-select --install`, then run the block again.
 - Linux: install `python3` with your package manager, then run the block again.
+
+`codex` CLI must be installed and authenticated. Install: https://github.com/openai/codex
 
 Do not carry on quietly. If the user insists on continuing without python3, say in Turkish that
 this is a **degraded kurulum**: continuity works, the automatic daily log and the knowledge
@@ -205,8 +207,6 @@ ln -s "../.claude/skills" "{{VAULT_PATH}}/.agents/skills"
 ln -s "../.claude/hooks" "{{VAULT_PATH}}/.codex/hooks"
 python3 "{{VAULT_PATH}}/.claude/scripts/render_codex_hooks.py" \
   --vault "{{VAULT_PATH}}" --platform posix
-python3 "{{VAULT_PATH}}/.claude/scripts/render_antigravity_hooks.py" \
-  --vault "{{VAULT_PATH}}" --platform posix
 ```
 
 No globs in the chmod. Under zsh an unmatched `*.sh` aborts the whole command with
@@ -220,13 +220,12 @@ Verify the v2 pieces landed:
 ```bash
 cd "{{VAULT_PATH}}"
 ls .claude/hooks/          # session-start.sh prompt-counter.sh session-end.sh pre-compact.sh lib.sh
-ls .claude/scripts/        # shared engine + Codex/Antigravity adapters
+ls .claude/scripts/        # flush.py compile.py
 ls .claude/skills/         # beyin-doktor gecmis-import
 ls -l AGENTS.md .agents/skills .codex/hooks
 python3 -m json.tool .codex/hooks.json >/dev/null && echo "Codex kancaları ✓"
-python3 -m json.tool .agents/hooks.json >/dev/null && echo "Antigravity kancaları ✓"
 ls -d daily knowledge/concepts knowledge/connections
-cat .beyin-version         # 2.3.0
+cat .beyin-version         # 2.1.0
 ```
 
 ## PHASE 3: Personalize (substitute placeholders)
@@ -361,7 +360,7 @@ the folder in Obsidian by hand always works.
 ## PHASE 7: First doctor run
 
 ```bash
-cd "{{VAULT_PATH}}" && claude "beyin doktor"
+cd "{{VAULT_PATH}}" && codex "beyin doktor"
 ```
 
 The `beyin-doktor` skill prints one health table. Close every 🔴 row before you report success.
@@ -382,7 +381,6 @@ test -f "{{VAULT_PATH}}/CLAUDE.md" && echo "CLAUDE.md ✓"
 test -L "{{VAULT_PATH}}/AGENTS.md" && echo "AGENTS.md ortak router ✓"
 test -L "{{VAULT_PATH}}/.agents/skills" && echo "Codex skill store ✓"
 python3 -m json.tool "{{VAULT_PATH}}/.codex/hooks.json" >/dev/null && echo "Codex hooks ✓"
-python3 -m json.tool "{{VAULT_PATH}}/.agents/hooks.json" >/dev/null && echo "Antigravity hooks ✓"
 test -f "{{VAULT_PATH}}/🔮 850-Companion/Last-Session.md" && echo "hafıza ✓"
 test -f "{{VAULT_PATH}}/.beyin-version" && echo "sürüm $(cat "{{VAULT_PATH}}/.beyin-version") ✓"
 test -d "$HOME/Desktop/{{OS_NAME}}.app" && echo "launcher 🧠 ✓"
@@ -485,7 +483,7 @@ Ask only what `--stage check` actually asked for.
    Yes → pass `--confirm-rename`.
    No → **stop the upgrade here.** Say in Turkish that the vault stays on v1, nothing was changed
    and no version was stamped. Do not run `apply`. Do not write `.beyin-version`. A vault stamped
-   `2.3.0` whose memory injection cannot find the folder is worse than an honest older vault.
+   `2.1.0` whose memory injection cannot find the folder is worse than an honest older vault.
 
 2. **`settings.local.json` içindeki v1 kancaları.** If the check found any:
    > "Eski kurulumda kancalar `settings.local.json` içine yazılmış. v2 bunları `settings.json`
@@ -509,7 +507,7 @@ Pass only the confirmation flags the check asked for. Read the numbered output b
 | Çıkış kodu | Anlamı | Ne yapacaksın |
 | --- | --- | --- |
 | `0` | apply tamam, sürüm damgası HENÜZ yazılmadı | PHASE U4'e geç |
-| `3` | vault zaten `2.3.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
+| `3` | vault zaten `2.1.0` | yükseltme yok, sadece `beyin doktor` çalıştır |
 | `10` | yeniden adlandırma onayı eksik | PHASE U2'ye dön |
 | `11` | yerel kanca temizliği onayı eksik | PHASE U2'ye dön |
 | `1` | sert hata, ekranda `HATA:` satırı var | DUR. Kullanıcıya oku, düzelt, tekrar çalıştır |
@@ -535,7 +533,7 @@ grep -rl "{{" "/kullanicinin/mutlak/vault/yolu/knowledge" \
 ## PHASE U5: Doctor
 
 ```bash
-cd "/kullanicinin/mutlak/vault/yolu" && claude "beyin doktor"
+cd "/kullanicinin/mutlak/vault/yolu" && codex "beyin doktor"
 ```
 
 Close every 🔴 row before you go on. The version has not been stamped yet, so the doctor is
@@ -595,19 +593,19 @@ Report in Turkish:
   ortağın adı, masaüstü kısayolu. Yükseltme modunda: hangi dosyalara dokunulmadığını da say, eski
   hafıza klasörü adının neden değiştiğini de tek cümleyle tekrarla.
 - ▶️ **İlk çalıştırma:** Obsidian'ı aç → vault olarak `{{VAULT_PATH}}` seç (bir kez tanıtır,
-  masaüstündeki 🧠 ikonu bundan sonra tek tıkla açar). Sonra o klasörde `claude` çalıştır.
+  masaüstündeki 🧠 ikonu bundan sonra tek tıkla açar). Sonra o klasörde `codex` çalıştır.
 
 ## Sihri göster, ama önce doğrula
 
 The SessionEnd hook detaches the summarizer and returns in under a second. That is on purpose,
 the hook budget is tight. It also means the daily log is **not** on disk the moment the user types
-`/exit`. Do not send them back into `claude` before you have seen the file.
+`/exit`. Do not send them back into `codex` before you have seen the file.
 
 Tell them, in Turkish, exactly this shape of thing:
 
 > "Şimdi benimle bir şey konuş, sonra `/exit` yaz. Arka planda küçük bir özetleyici çalışacak,
 > genelde birkaç saniye sürer. Ben günlük logun diske düştüğünü görene kadar bekleyeceğim, sonra
-> `claude`'u tekrar açacağız."
+> `codex`'i tekrar açacağız."
 
 After they type `/exit`, run this bounded poll from the repo and wait for it. Do not skip it, and
 do not tell the user "oldu" before it prints its success line:
@@ -634,7 +632,7 @@ fi
 
 Wait for one of the two final lines. There is no third outcome, and neither of them is silent.
 
-- `GUNLUK LOG HAZIR` → show the tail to the user, that is the actual demo. Now relaunch `claude`.
+- `GUNLUK LOG HAZIR` → show the tail to the user, that is the actual demo. Now relaunch `codex`.
 - `GUNLUK LOG 120 SANIYEDE YAZILMADI` → do not relaunch yet. Run `beyin doktor` in the vault and
   read the result. Two boring causes cover almost every case: the conversation was too short to be
   worth summarizing (the summarizer answers `FLUSH_BOS` and writes nothing, which is correct
@@ -642,10 +640,10 @@ Wait for one of the two final lines. There is no third outcome, and neither of t
 
 ## Honest timing, say it in Turkish
 
-- **Günlük log:** oturum kapanışında, arka planda, küçük bir Haiku çağrısı. Saniyeler.
+- **Günlük log:** oturum kapanışında, arka planda, kısa bir LLM çağrısı. Saniyeler.
 - **Bilgi derlemesi:** aynı akşam değil, saat 18'den sonraki ilk oturum kapanışında, günde bir kez,
-  ve bir Sonnet çağrısı olduğu için **dakikalar** sürebilir. `knowledge/` klasörünün o an boş
-  olması normal. Ertesi sabah `claude` açtığında indeks kendiliğinden bağlama girer.
+  ve bir LLM çağrısı olduğu için **dakikalar** sürebilir. `knowledge/` klasörünün o an boş
+  olması normal. Ertesi sabah `codex` açtığında indeks kendiliğinden bağlama girer.
 
 Never promise the knowledge articles in the same minute. Promise the daily log, show the daily
 log, and be precise about when the rest arrives.
@@ -653,9 +651,8 @@ log, and be precise about when the rest arrives.
 ## Kapanış
 
 - 🩺 **Bir şey ters giderse:** `beyin doktor` yaz. Tek tabloda her parçanın durumunu verir.
-- 💸 **Maliyet:** Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Claude aboneliğinin
-  günlük limitinden küçük bir pay kullanır (özet: her oturum sonunda küçük bir Haiku çağrısı;
-  derleme: günde bir Sonnet çağrısı).
+- 💸 **Maliyet:** Ekstra ücret yok; arka plan özetleyici ve derleyici mevcut Codex/ChatGPT
+  aboneliğinin günlük limitinden küçük bir pay kullanır.
 - 🔗 **Sen de kurdun mu?** Bir arkadaşına gönder: `avenox.lol/beyin.md`
 
 Do not end the session by saying "kuruldu" alone. Show the pipeline once, with the user watching.

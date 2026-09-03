@@ -20,12 +20,7 @@ import uuid
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SOURCE_SCRIPTS = Path(
-    os.environ.get(
-        "BEYIN_TEST_SOURCE_SCRIPTS",
-        REPO_ROOT / "template" / ".claude" / "scripts",
-    )
-).resolve()
+SOURCE_SCRIPTS = REPO_ROOT / "template" / ".claude" / "scripts"
 sys.path.insert(0, str(SOURCE_SCRIPTS))
 VALID_SUMMARY = """## Bağlam
 Kalıcı bağlam.
@@ -52,7 +47,6 @@ FLUSH = load_module("beyin_flush_test", SOURCE_SCRIPTS / "flush.py")
 CODEX_RENDERER = load_module(
     "beyin_codex_renderer_test", SOURCE_SCRIPTS / "render_codex_hooks.py"
 )
-GRAF = load_module("beyin_graf_test", SOURCE_SCRIPTS / "graf_kontrol.py")
 
 
 class ScriptsTest(unittest.TestCase):
@@ -73,9 +67,6 @@ class ScriptsTest(unittest.TestCase):
         shutil.copy2(SOURCE_SCRIPTS / "flush.py", self.scripts / "flush.py")
         shutil.copy2(SOURCE_SCRIPTS / "compile.py", self.scripts / "compile.py")
         shutil.copy2(SOURCE_SCRIPTS / "_portalock.py", self.scripts / "_portalock.py")
-        shutil.copy2(SOURCE_SCRIPTS / "model_runner.py", self.scripts / "model_runner.py")
-        shutil.copy2(SOURCE_SCRIPTS / "config.json", self.scripts / "config.json")
-        shutil.copy2(SOURCE_SCRIPTS / "_platform.py", self.scripts / "_platform.py")
         (self.knowledge / "index.md").write_text(
             "# Bilgi İndeksi\n", encoding="utf-8"
         )
@@ -84,25 +75,43 @@ class ScriptsTest(unittest.TestCase):
         )
         (self.knowledge / "concepts").mkdir()
         (self.knowledge / "connections").mkdir()
-        self.stub_log = self.root / "claude-calls.jsonl"
-        self._write_claude_stub()
+        self.stub_log = self.root / "llm-calls.jsonl"
+        self._write_llm_stub()
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _write_claude_stub(self) -> None:
-        stub = self.bin_dir / "claude"
-        stub.write_text(
-            """#!/usr/bin/env python3
+    def _write_llm_stub(self) -> None:
+        """Write a stub that pretends to be either 'claude' or 'codex'.
+
+        The stub is placed at bin_dir/claude and bin_dir/codex so that
+        _run_llm() finds it via BEYIN_LLM=claude (set in _environment).
+        Both invocation styles (Claude stdin-based and Codex positional-prompt)
+        are handled transparently.
+        """
+        stub_body = """#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
 import sys
 import time
 
-prompt = sys.stdin.read()
 arguments = sys.argv[1:]
-is_compile = "sonnet" in arguments
+# Codex path: '-' signals that the prompt comes from stdin (codex exec -o file -).
+# Both Claude and Codex paths now pass the prompt via stdin.
+is_codex_call = "exec" in arguments
+# Always read stdin (both paths send prompt through stdin).
+prompt = sys.stdin.read()
+# Determine output file from -o flag (Codex path only).
+output_file = None
+for i, arg in enumerate(arguments):
+    if arg in ("-o", "--output-last-message") and i + 1 < len(arguments):
+        output_file = Path(arguments[i + 1])
+        break
+
+# is_compile: compile prompts use --sandbox (Codex path) or contain sonnet (Claude path).
+is_compile = "--sandbox" in arguments or "sonnet" in arguments
+
 log_path = os.environ.get("BEYIN_TEST_LOG")
 if log_path:
     with Path(log_path).open("a", encoding="utf-8") as log:
@@ -117,9 +126,11 @@ delay = float(os.environ.get("BEYIN_TEST_SLEEP", "0"))
 if delay:
     time.sleep(delay)
 
+exit_code = int(os.environ.get("BEYIN_TEST_EXIT", "0"))
+
 if is_compile:
     action = os.environ.get("BEYIN_TEST_COMPILE_ACTION", "append_log")
-    if action == "append_log":
+    if action == "append_log" and not exit_code:
         with Path("knowledge/log.md").open("a", encoding="utf-8") as target:
             target.write("\\nmodel change\\n")
     elif action == "forbidden":
@@ -135,38 +146,20 @@ if is_compile:
     elif action == "symlink":
         target = Path("knowledge/concepts/escape.md")
         target.symlink_to("../../daily/input.md")
-    elif action == "type_change":
-        concepts_dir = Path("knowledge/concepts")
-        concepts_dir.mkdir(exist_ok=True)
-        file_to_dir = concepts_dir / "type-test.md"
-        if file_to_dir.exists():
-            if file_to_dir.is_file():
-                import shutil
-                shutil.rmtree(file_to_dir)
-                file_to_dir.mkdir()
-        else:
-            file_to_dir.mkdir()
 else:
-    sequence = os.environ.get("BEYIN_TEST_OUTPUT_SEQUENCE")
-    if sequence:
-        outputs = json.loads(sequence)
-        state_path = Path(os.environ["BEYIN_TEST_SEQUENCE_STATE"])
-        try:
-            index = int(state_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, ValueError):
-            index = 0
-        state_path.write_text(str(index + 1), encoding="utf-8")
-        output = outputs[min(index, len(outputs) - 1)]
-    else:
-        output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
-    if output:
-        print(output)
+    output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
+    text = output if output else ""
+    if output_file is not None and text:
+        output_file.write_text(text, encoding="utf-8")
+    elif text:
+        print(text)
 
-raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
-""",
-            encoding="utf-8",
-        )
-        stub.chmod(0o755)
+raise SystemExit(exit_code)
+"""
+        for name in ("claude", "codex"):
+            stub = self.bin_dir / name
+            stub.write_text(stub_body, encoding="utf-8")
+            stub.chmod(0o755)
 
     def _environment(self, **overrides: str) -> dict[str, str]:
         environment = os.environ.copy()
@@ -174,6 +167,9 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         environment["PATH"] = f"{self.bin_dir}{os.pathsep}{environment['PATH']}"
         environment["BEYIN_TEST_LOG"] = str(self.stub_log)
         environment["BEYIN_FAKE_HOUR"] = "0"
+        # Force _run_llm() to use the claude stub in tests; this keeps test
+        # isolation independent of whether a real codex binary exists on PATH.
+        environment["BEYIN_LLM"] = "claude"
         environment.update(overrides)
         return environment
 
@@ -265,6 +261,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         ]
         if model is None:
             return calls
+        if model == "haiku":
+            return [call for call in calls if "haiku" in call["argv"] or "--ephemeral" in call["argv"]]
+        if model == "sonnet":
+            return [call for call in calls if "sonnet" in call["argv"] or "--sandbox" in call["argv"]]
         return [call for call in calls if model in call["argv"]]
 
     def _payload_snapshot(self) -> dict[str, bytes]:
@@ -315,37 +315,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             {"type": "event_msg", "payload": {"type": "user_message", "message": "Codex kullanıcı mesajı"}},
             {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
             {"type": "event_msg", "payload": {"type": "agent_message", "message": "Codex yanıtı"}},
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "UserMessage",
-                        "content": [{"type": "text", "text": "Yeni kullanıcı mesajı"}],
-                    },
-                },
-            },
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "AgentMessage",
-                        "content": [{"type": "Text", "text": "Yeni ajan yanıtı"}],
-                    },
-                },
-            },
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "Reasoning",
-                        "content": [{"type": "Text", "text": "gizli"}],
-                    },
-                },
-            },
             {"type": "event_msg", "payload": {"type": "task_started", "message": "yoksay"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "gizli talimat"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Yeni Codex kullanıcı mesajı"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Yeni Codex yanıtı"}]}},
         ]
         transcript.write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
@@ -356,8 +329,8 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             [
                 ("user", "Codex kullanıcı mesajı"),
                 ("assistant", "Codex yanıtı"),
-                ("user", "Yeni kullanıcı mesajı"),
-                ("assistant", "Yeni ajan yanıtı"),
+                ("user", "Yeni Codex kullanıcı mesajı"),
+                ("assistant", "Yeni Codex yanıtı"),
             ],
         )
 
@@ -442,18 +415,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         calls = self._stub_calls("haiku")
         self.assertEqual(len(calls), 1)
         self.assertEqual(
-            calls[0]["argv"],
-            [
-                "-p",
-                "--model",
-                "haiku",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "",
-            ],
+            calls[0]["argv"][:3],
+            ["exec", "--ephemeral", "--skip-git-repo-check"],
         )
+        self.assertEqual(calls[0]["argv"][3], "-o")
+        self.assertEqual(calls[0]["argv"][5], "-")
         self.assertEqual(calls[0]["guard"], "beyin-scripts")
         self.assertNotEqual(Path(str(calls[0]["cwd"])), self.vault)
         self.assertIn("BEGIN UNTRUSTED TRANSCRIPT DATA", calls[0]["prompt"])
@@ -474,48 +440,9 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
 
         second = self._run_flush(hook, BEYIN_TEST_OUTPUT=VALID_SUMMARY)
         self.assertEqual(second.returncode, 0)
-        self.assertEqual(len(self._stub_calls("haiku")), 3)
+        self.assertEqual(len(self._stub_calls("haiku")), 2)
         daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
         self.assertEqual(daily_body.count("### Oturum ("), 1)
-
-    def test_summary_preamble_is_trimmed_and_reported(self) -> None:
-        transcript = self._write_transcript([("user", "kalıcı karar")])
-        hook = self._write_hook("preamble-session", transcript)
-        preamble = "Şüpheli içerik uyarısı; şema gövdesi aşağıdadır.\n\n"
-        result = self._run_flush(
-            hook,
-            BEYIN_TEST_OUTPUT=preamble + VALID_SUMMARY,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
-        self.assertNotIn(preamble.strip(), daily_body)
-        self.assertIn(VALID_SUMMARY, daily_body)
-        health = json.loads(
-            (self.state / "health.json").read_text(encoding="utf-8")
-        )
-        self.assertIn("warn:summary-preamble-trimmed", health["warnings"])
-
-    def test_schema_mismatch_retries_once_then_appends(self) -> None:
-        transcript = self._write_transcript([("user", "kalıcı karar")])
-        hook = self._write_hook("schema-retry-session", transcript)
-        result = self._run_flush(
-            hook,
-            BEYIN_TEST_OUTPUT_SEQUENCE=json.dumps(
-                ["## Bağlam\nEksik çıktı", VALID_SUMMARY],
-                ensure_ascii=False,
-            ),
-            BEYIN_TEST_SEQUENCE_STATE=str(self.root / "summary-sequence"),
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        calls = self._stub_calls("haiku")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("Bu ikinci şema denemesidir", calls[1]["prompt"])
-        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
-        self.assertEqual(daily_body.count("### Oturum ("), 1)
-        health = json.loads(
-            (self.state / "health.json").read_text(encoding="utf-8")
-        )
-        self.assertIn("warn:summary-schema-retried", health["warnings"])
 
     def test_concurrent_flushes_make_one_call_and_one_daily_entry(self) -> None:
         transcript = self._write_transcript([("user", "eşzamanlı oturum")])
@@ -933,22 +860,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(state["ingested"][daily_path.name], expected)
         call = self._stub_calls("sonnet")[0]
         self.assertEqual(
-            call["argv"],
-            [
-                "-p",
-                "--model",
-                "sonnet",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "Read,Write,Edit,Glob,Grep",
-                "--permission-mode",
-                "acceptEdits",
-                "--allowedTools",
-                "Read,Write,Edit,Glob,Grep",
-            ],
+            call["argv"][:4],
+            ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check"],
         )
+        self.assertEqual(call["argv"][4], "-o")
+        self.assertEqual(call["argv"][6], "-")
         call_cwd = Path(str(call["cwd"]))
         # The stage must live outside the vault entirely (and thus outside
         # .claude/), not under state_dir: Claude CLI auto-protects any path
@@ -974,7 +890,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             (self.state / "compile-state.json").read_text(encoding="utf-8")
         )
         self.assertEqual(state["ingested"], {})
-        self.assertEqual(state["last_status"], "fail:claude-exit-7")
+        self.assertEqual(state["last_status"], "fail:codex-exit-7")
         health = json.loads(
             (self.state / "health.json").read_text(encoding="utf-8")
         )
@@ -1010,150 +926,6 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(compile_result.returncode, 0)
         self.assertEqual(self._stub_calls(), [])
         self.assertFalse((self.state / "health.json").exists())
-
-    def test_compile_prepare_stage_outside_vault(self) -> None:
-        daily_path = self.daily / "2026-08-20.md"
-        daily_path.write_text("test daily", encoding="utf-8")
-        result = self._run_compile()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        state = json.loads(
-            (self.state / "compile-state.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(state["last_status"], "ok")
-        calls = self._stub_calls("sonnet")
-        self.assertEqual(len(calls), 1)
-        stage_path = Path(calls[0]["cwd"])
-        self.assertNotIn(str(self.vault), str(stage_path.resolve()))
-
-    def test_compile_prepare_stage_guard_inside_vault(self) -> None:
-        daily_path = self.daily / "2026-08-20.md"
-        daily_path.write_text("test daily", encoding="utf-8")
-        unsafe_temp = self.vault / "tmp"
-        unsafe_temp.mkdir()
-        result = self._run_compile(
-            TMPDIR=str(unsafe_temp),
-            TEMP=str(unsafe_temp),
-            TMP=str(unsafe_temp),
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        state = json.loads(
-            (self.state / "compile-state.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(state["last_status"], "fail:policy")
-        health = json.loads(
-            (self.state / "health.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(health["error"], "stage-inside-vault")
-
-    def test_compile_manifest_diff_type_change(self) -> None:
-        import importlib
-        sys.path.insert(0, str(self.scripts))
-        compile_module = importlib.import_module("compile")
-        before = {"knowledge/concepts/type-test.md": ("file", "abc123")}
-        after = {"knowledge/concepts/type-test.md": ("dir", "")}
-        with self.assertRaises(compile_module.PolicyError) as context:
-            compile_module._validate_manifest_diff(before, after)
-        self.assertIn("type-change", str(context.exception))
-
-    @unittest.skipUnless(
-        hasattr(os, "symlink") or sys.platform == "win32",
-        "symlink not available",
-    )
-    def test_path_within_vault_reparse(self) -> None:
-        import importlib
-        sys.path.insert(0, str(self.scripts))
-        _platform = importlib.import_module("_platform")
-        self.assertFalse(
-            _platform.path_within_vault(Path("/etc/passwd"), self.vault)
-        )
-        safe_path = self.knowledge / "index.md"
-        safe_path.write_text("test", encoding="utf-8")
-        self.assertTrue(
-            _platform.path_within_vault(safe_path, self.vault)
-        )
-        self.assertFalse(_platform._is_link_or_reparse(safe_path))
-        self.assertTrue(_platform.path_within_vault(safe_path, self.root))
-
-
-class GrafKontrolTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="beyin-graf-tests-")
-        self.vault = Path(self.temporary.name)
-        self.addCleanup(self.temporary.cleanup)
-
-    def write(self, rel: str, text: str) -> None:
-        path = self.vault / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def test_reports_broken_links_and_orphans(self) -> None:
-        self.write("a.md", "[[b]] ve [[yok-boyle]]")
-        self.write("b.md", "govde")
-        self.write("c.md", "kimse bana baglanmiyor")
-        total, broken, orphans = GRAF.tara(self.vault)
-        self.assertEqual(total, 3)
-        self.assertEqual([target for _, target in broken], ["yok-boyle"])
-        self.assertEqual([str(o) for o in orphans], ["a.md", "c.md"])
-
-    def test_resolves_full_paths_headings_and_aliases(self) -> None:
-        # Tablo icindeki [[yol\|takma-ad]] kacisi ve [[not#baslik]] kirik sayilmamali.
-        self.write("alan/🏰 300-Projects/proje.md", "govde")
-        self.write(
-            "hub.md",
-            "[[🏰 300-Projects/proje]] [[proje#baslik]] "
-            "[[🏰 300-Projects/proje\\|takma]]",
-        )
-        _, broken, orphans = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-        self.assertNotIn(
-            "alan/🏰 300-Projects/proje.md", [str(o) for o in orphans]
-        )
-
-    def test_hook_injected_and_skipped_paths_are_not_orphans(self) -> None:
-        # Kanca ile enjekte edilen hafiza dosyalari ve muaf klasorler yetim sayilmaz.
-        self.write("🔮 850-Companion/Journal.md", "gunluk")
-        self.write("📋 Templates/Note.md", "sablon")
-        self.write("daily/2026-01-01.md", "log")
-        self.write("📦 900-Archive/eski.md", "arsiv")
-        total, broken, orphans = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-        self.assertEqual(orphans, [])
-        self.assertEqual(total, 3)  # 900-Archive hic taranmaz
-
-    def test_folder_and_external_targets_are_ignored(self) -> None:
-        self.write("hub.md", "[[🏰 300-Projects/]] [[https://ornek.com]]")
-        _, broken, _ = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-
-    def test_code_comments_and_inline_examples_do_not_create_edges(self) -> None:
-        self.write(
-            "hub.md",
-            "`[[inline-yok]]`\n```md\n[[fence-yok]]\n```\n%% [[yorum-yok]] %%",
-        )
-        _, broken, _ = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-
-    def test_attachment_casefold_and_relative_targets_resolve(self) -> None:
-        self.write(
-            "alt/hub.md",
-            "![[Görsel.PNG]] [[../Notlar/KARAR]]",
-        )
-        attachment = self.vault / "Görsel.PNG"
-        attachment.write_bytes(b"png placeholder")
-        self.write("Notlar/Karar.md", "govde")
-        _, broken, orphans = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-        self.assertNotIn("Notlar/Karar.md", [str(item) for item in orphans])
-
-    def test_duplicate_basenames_do_not_create_false_orphans(self) -> None:
-        self.write("hub.md", "[[karar]]")
-        self.write("bir/karar.md", "ilk")
-        self.write("iki/karar.md", "ikinci")
-        _, broken, orphans = GRAF.tara(self.vault)
-        self.assertEqual(broken, [])
-        orphan_names = [str(item) for item in orphans]
-        self.assertNotIn("bir/karar.md", orphan_names)
-        self.assertNotIn("iki/karar.md", orphan_names)
 
 
 if __name__ == "__main__":

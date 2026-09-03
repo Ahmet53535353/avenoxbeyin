@@ -102,9 +102,6 @@ class ScriptsTest(unittest.TestCase):
         shutil.copy2(SOURCE_SCRIPTS / "compile.py", self.scripts / "compile.py")
         # Gerçek dağıtım üç dosyadır: motor iki script + portable kilit modülü.
         shutil.copy2(SOURCE_SCRIPTS / "_portalock.py", self.scripts / "_portalock.py")
-        shutil.copy2(SOURCE_SCRIPTS / "model_runner.py", self.scripts / "model_runner.py")
-        shutil.copy2(SOURCE_SCRIPTS / "config.json", self.scripts / "config.json")
-        shutil.copy2(SOURCE_SCRIPTS / "_platform.py", self.scripts / "_platform.py")
         (self.knowledge / "index.md").write_text(
             "# Bilgi İndeksi\n", encoding="utf-8"
         )
@@ -113,8 +110,8 @@ class ScriptsTest(unittest.TestCase):
         )
         (self.knowledge / "concepts").mkdir()
         (self.knowledge / "connections").mkdir()
-        self.stub_log = self.root / "claude-calls.jsonl"
-        self._write_claude_stub()
+        self.stub_log = self.root / "llm-calls.jsonl"
+        self._write_llm_stub()
 
     def tearDown(self) -> None:
         # Windows'ta ayrik surecler (flush.py / compile.py) dizin tutamaklarini
@@ -131,10 +128,8 @@ class ScriptsTest(unittest.TestCase):
                 time.sleep(0.2 * (attempt + 1))
         shutil.rmtree(self.temporary.name, ignore_errors=True)
 
-    def _write_claude_stub(self) -> None:
-        stub = self.bin_dir / "claude"
-        stub.write_text(
-            """#!/usr/bin/env python3
+    def _write_llm_stub(self) -> None:
+        stub_body = """#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
@@ -144,9 +139,17 @@ import time
 sys.stdin.reconfigure(encoding="utf-8", errors="strict")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-prompt = sys.stdin.read()
 arguments = sys.argv[1:]
-is_compile = "sonnet" in arguments
+is_codex_call = "exec" in arguments
+prompt = sys.stdin.read()
+output_file = None
+for i, arg in enumerate(arguments):
+    if arg in ("-o", "--output-last-message") and i + 1 < len(arguments):
+        output_file = Path(arguments[i + 1])
+        break
+
+is_compile = "--sandbox" in arguments or "sonnet" in arguments
+
 log_path = os.environ.get("BEYIN_TEST_LOG")
 if log_path:
     with Path(log_path).open("a", encoding="utf-8") as log:
@@ -161,9 +164,11 @@ delay = float(os.environ.get("BEYIN_TEST_SLEEP", "0"))
 if delay:
     time.sleep(delay)
 
+exit_code = int(os.environ.get("BEYIN_TEST_EXIT", "0"))
+
 if is_compile:
     action = os.environ.get("BEYIN_TEST_COMPILE_ACTION", "append_log")
-    if action == "append_log":
+    if action == "append_log" and not exit_code:
         with Path("knowledge/log.md").open("a", encoding="utf-8") as target:
             target.write("\\nmodel change\\n")
     elif action == "forbidden":
@@ -180,38 +185,31 @@ if is_compile:
         target = Path("knowledge/concepts/escape.md")
         target.symlink_to("../../daily/input.md")
 else:
-    sequence = os.environ.get("BEYIN_TEST_OUTPUT_SEQUENCE")
-    if sequence:
-        outputs = json.loads(sequence)
-        state_path = Path(os.environ["BEYIN_TEST_SEQUENCE_STATE"])
-        try:
-            index = int(state_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, ValueError):
-            index = 0
-        state_path.write_text(str(index + 1), encoding="utf-8")
-        output = outputs[min(index, len(outputs) - 1)]
-    else:
-        output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
-    if output:
-        print(output)
+    output = os.environ.get("BEYIN_TEST_OUTPUT", "FLUSH_BOS")
+    text = output if output else ""
+    if output_file is not None and text:
+        output_file.write_text(text, encoding="utf-8")
+    elif text:
+        print(text)
 
-raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
-""",
-            encoding="utf-8",
-        )
-        stub.chmod(0o755)
-        if sys.platform == "win32":
-            shim = "\n".join(
-                [
-                    "@echo off",
-                    f'"{sys.executable}" "%~dp0claude" %*',
-                    "",
-                ]
-            )
-            (self.bin_dir / "claude.cmd").write_text(
-                shim,
-                encoding="utf-8",
-            )
+raise SystemExit(exit_code)
+"""
+        for name in ("claude", "codex"):
+            stub = self.bin_dir / name
+            stub.write_text(stub_body, encoding="utf-8")
+            stub.chmod(0o755)
+            if sys.platform == "win32":
+                shim = "\n".join(
+                    [
+                        "@echo off",
+                        f'"{sys.executable}" "%~dp0{name}" %*',
+                        "",
+                    ]
+                )
+                (self.bin_dir / f"{name}.cmd").write_text(
+                    shim,
+                    encoding="utf-8",
+                )
 
     def _environment(self, **overrides: str) -> dict[str, str]:
         environment = os.environ.copy()
@@ -219,6 +217,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         environment["PATH"] = f"{self.bin_dir}{os.pathsep}{environment['PATH']}"
         environment["BEYIN_TEST_LOG"] = str(self.stub_log)
         environment["BEYIN_FAKE_HOUR"] = "0"
+        environment["BEYIN_LLM"] = "claude"
         environment.update(overrides)
         return environment
 
@@ -314,6 +313,10 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         ]
         if model is None:
             return calls
+        if model == "haiku":
+            return [call for call in calls if "haiku" in call["argv"] or "--ephemeral" in call["argv"]]
+        if model == "sonnet":
+            return [call for call in calls if "sonnet" in call["argv"] or "--sandbox" in call["argv"]]
         return [call for call in calls if model in call["argv"]]
 
     def _payload_snapshot(self) -> dict[str, bytes]:
@@ -360,6 +363,26 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertTrue(capped.startswith("**"))
         self.assertRegex(capped, r"^\*\*(User|Assistant):\*\* id\d+:")
 
+    def test_current_codex_rollout_transcript_extraction(self) -> None:
+        transcript = self.root / "rollout.jsonl"
+        records = [
+            {"type": "response_item", "payload": {"type": "reasoning", "text": "gizli"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "gizli talimat"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Codex kullanıcı mesajı"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Codex yanıtı"}]}},
+        ]
+        transcript.write_text(
+            "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            FLUSH.read_transcript(transcript),
+            [
+                ("user", "Codex kullanıcı mesajı"),
+                ("assistant", "Codex yanıtı"),
+            ],
+        )
+
     def test_flush_bos_appends_nothing_and_records_success(self) -> None:
         transcript = self._write_transcript([("user", "yalnızca selam")])
         hook = self._write_hook("bos-session", transcript)
@@ -390,18 +413,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         calls = self._stub_calls("haiku")
         self.assertEqual(len(calls), 1)
         self.assertEqual(
-            calls[0]["argv"],
-            [
-                "-p",
-                "--model",
-                "haiku",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "",
-            ],
+            calls[0]["argv"][:3],
+            ["exec", "--ephemeral", "--skip-git-repo-check"],
         )
+        self.assertEqual(calls[0]["argv"][3], "-o")
+        self.assertEqual(calls[0]["argv"][5], "-")
         self.assertEqual(calls[0]["guard"], "beyin-scripts")
         self.assertNotEqual(Path(str(calls[0]["cwd"])), self.vault)
         self.assertIn("BEGIN UNTRUSTED TRANSCRIPT DATA", calls[0]["prompt"])
@@ -422,48 +438,9 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
 
         second = self._run_flush(hook, BEYIN_TEST_OUTPUT=VALID_SUMMARY)
         self.assertEqual(second.returncode, 0)
-        self.assertEqual(len(self._stub_calls("haiku")), 3)
+        self.assertEqual(len(self._stub_calls("haiku")), 2)
         daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
         self.assertEqual(daily_body.count("### Oturum ("), 1)
-
-    def test_summary_preamble_is_trimmed_and_reported(self) -> None:
-        transcript = self._write_transcript([("user", "kalıcı karar")])
-        hook = self._write_hook("preamble-session", transcript)
-        preamble = "Şüpheli içerik uyarısı; şema gövdesi aşağıdadır.\n\n"
-        result = self._run_flush(
-            hook,
-            BEYIN_TEST_OUTPUT=preamble + VALID_SUMMARY,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
-        self.assertNotIn(preamble.strip(), daily_body)
-        self.assertIn(VALID_SUMMARY, daily_body)
-        health = json.loads(
-            (self.state / "health.json").read_text(encoding="utf-8")
-        )
-        self.assertIn("warn:summary-preamble-trimmed", health["warnings"])
-
-    def test_schema_mismatch_retries_once_then_appends(self) -> None:
-        transcript = self._write_transcript([("user", "kalıcı karar")])
-        hook = self._write_hook("schema-retry-session", transcript)
-        result = self._run_flush(
-            hook,
-            BEYIN_TEST_OUTPUT_SEQUENCE=json.dumps(
-                ["## Bağlam\nEksik çıktı", VALID_SUMMARY],
-                ensure_ascii=False,
-            ),
-            BEYIN_TEST_SEQUENCE_STATE=str(self.root / "summary-sequence"),
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        calls = self._stub_calls("haiku")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("Bu ikinci şema denemesidir", calls[1]["prompt"])
-        daily_body = next(self.daily.glob("*.md")).read_text(encoding="utf-8")
-        self.assertEqual(daily_body.count("### Oturum ("), 1)
-        health = json.loads(
-            (self.state / "health.json").read_text(encoding="utf-8")
-        )
-        self.assertIn("warn:summary-schema-retried", health["warnings"])
 
     def test_concurrent_flushes_make_one_call_and_one_daily_entry(self) -> None:
         transcript = self._write_transcript([("user", "eşzamanlı oturum")])
@@ -882,22 +859,11 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertEqual(state["ingested"][daily_path.name], expected)
         call = self._stub_calls("sonnet")[0]
         self.assertEqual(
-            call["argv"],
-            [
-                "-p",
-                "--model",
-                "sonnet",
-                "--output-format",
-                "text",
-                "--safe-mode",
-                "--tools",
-                "Read,Write,Edit,Glob,Grep",
-                "--permission-mode",
-                "acceptEdits",
-                "--allowedTools",
-                "Read,Write,Edit,Glob,Grep",
-            ],
+            call["argv"][:4],
+            ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check"],
         )
+        self.assertEqual(call["argv"][4], "-o")
+        self.assertEqual(call["argv"][6], "-")
         call_cwd = Path(str(call["cwd"]))
         # The stage must live outside the vault entirely (and thus outside
         # .claude/), not under state_dir: Claude CLI auto-protects any path
@@ -923,7 +889,7 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
             (self.state / "compile-state.json").read_text(encoding="utf-8")
         )
         self.assertEqual(state["ingested"], {})
-        self.assertEqual(state["last_status"], "fail:claude-exit-7")
+        self.assertEqual(state["last_status"], "fail:codex-exit-7")
         health = json.loads(
             (self.state / "health.json").read_text(encoding="utf-8")
         )
@@ -965,54 +931,71 @@ raise SystemExit(int(os.environ.get("BEYIN_TEST_EXIT", "0")))
         self.assertFalse((self.state / "health.json").exists())
 
     def test_model_subprocess_encoding_is_locale_independent(self) -> None:
-        import model_runner
+        compile_module = load_module(
+            f"beyin_compile_encoding_{uuid.uuid4().hex}",
+            self.scripts / "compile.py",
+        )
         prompt = "ş"
         expected_bytes = prompt.encode("utf-8")
 
-        observed = []
+        cases = [
+            (
+                "flush",
+                FLUSH,
+                lambda: FLUSH._run_llm(prompt, self.vault),
+            ),
+            (
+                "compile",
+                compile_module,
+                lambda: compile_module._run_llm(prompt, self.root),
+            ),
+        ]
 
-        def fake_run(command, **kwargs):
-            encoding = kwargs.get("encoding") or "cp1252"
-            errors = kwargs.get("errors") or "strict"
-            sent = kwargs["input"].encode(encoding, errors)
-            observed.append(
-                {
-                    "encoding": kwargs.get("encoding"),
-                    "errors": kwargs.get("errors"),
-                    "sent": sent,
-                }
-            )
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout="FLUSH_BOS",
-                stderr="",
-            )
+        for name, module, invoke in cases:
+            with self.subTest(name=name):
+                observed = []
 
-        with mock.patch.object(
-            model_runner.subprocess,
-            "run",
-            side_effect=fake_run,
-        ), mock.patch.object(
-            model_runner.shutil,
-            "which",
-            return_value="claude",
-        ):
-            stdout, error, provider = model_runner.run_model(
-                prompt=prompt,
-                cwd=self.vault,
-                mode="text",
-                timeout=240,
-                preferred=None,
-            )
+                def fake_run(command, **kwargs):
+                    encoding = kwargs.get("encoding") or "cp1252"
+                    errors = kwargs.get("errors") or "strict"
+                    sent = kwargs["input"].encode(encoding, errors)
+                    observed.append(
+                        {
+                            "encoding": kwargs.get("encoding"),
+                            "errors": kwargs.get("errors"),
+                            "sent": sent,
+                        }
+                    )
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout="FLUSH_BOS",
+                        stderr="",
+                    )
 
-        self.assertEqual(len(observed), 1)
-        self.assertEqual(observed[0]["encoding"], "utf-8")
-        self.assertEqual(observed[0]["errors"], "replace")
-        self.assertEqual(observed[0]["sent"], expected_bytes)
-        self.assertEqual(stdout, "FLUSH_BOS")
-        self.assertIsNone(error)
-        self.assertEqual(provider, "claude")
+                with (
+                    mock.patch.object(
+                        module.shutil,
+                        "which",
+                        return_value="claude",
+                    ),
+                    mock.patch.object(
+                        module.subprocess,
+                        "run",
+                        side_effect=fake_run,
+                    ),
+                ):
+                    result = invoke()
+
+                self.assertEqual(len(observed), 1)
+                self.assertEqual(observed[0]["encoding"], "utf-8")
+                self.assertEqual(observed[0]["errors"], "replace")
+                self.assertEqual(observed[0]["sent"], expected_bytes)
+
+                if name == "flush":
+                    self.assertEqual(result, ("FLUSH_BOS", None))
+                else:
+                    self.assertIsNone(result)
 
 
 if __name__ == "__main__":

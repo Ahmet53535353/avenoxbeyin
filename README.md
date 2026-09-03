@@ -126,14 +126,14 @@ eklenir, dört kanca dosyası yenisiyle değiştirilir, `settings.json` kanca ka
         |                                    |
         +------------------+-----------------+
                            v
-                       flush.py           (claude -p veya agy -p)
+                       flush.py           (codex exec --ephemeral / codex exec --sandbox workspace-write)
                   transkripti okur, Türkçe özet çıkarır
                            v
                  daily/YYYY-MM-DD.md      <-- makine yazar, sen değil
                            |
         (saat 18'den sonra, günde bir kez, değişen log varsa)
                            v
-                      compile.py          (claude -p veya agy -p)
+                      compile.py          (codex exec --ephemeral / codex exec --sandbox workspace-write)
                            v
    knowledge/concepts/*.md + knowledge/connections/*.md + knowledge/index.md
                            |
